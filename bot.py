@@ -246,7 +246,7 @@ async def get_claude_response(user_message: str, mode: str = "geek") -> str:
 
     try:
         response = claude.messages.create(
-            model="claude-haiku-3-5-20241022",
+            model="claude-3-haiku-20240307",
             max_tokens=800,
             system=system,
             messages=[{"role": "user", "content": user_message}]
