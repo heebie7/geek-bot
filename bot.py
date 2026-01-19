@@ -26,6 +26,7 @@ import anthropic
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from github import Github
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -111,6 +112,49 @@ BASE_DIR = os.path.dirname(__file__)
 USER_CONTEXT_FILE = os.path.join(BASE_DIR, "user_context.md")
 LEYA_CONTEXT_FILE = os.path.join(BASE_DIR, "leya_context.md")
 TASKS_FILE = os.path.join(BASE_DIR, "tasks.md")
+
+# === GITHUB ===
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "heebie7/geek-bot")
+
+def get_github_file(filepath: str) -> str:
+    """Получить файл из GitHub."""
+    if not GITHUB_TOKEN:
+        return load_file(os.path.join(BASE_DIR, filepath), "Файл не найден.")
+    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(GITHUB_REPO)
+        content = repo.get_contents(filepath)
+        return content.decoded_content.decode('utf-8')
+    except Exception as e:
+        logger.error(f"GitHub read error: {e}")
+        return load_file(os.path.join(BASE_DIR, filepath), "Файл не найден.")
+
+def update_github_file(filepath: str, new_content: str, message: str) -> bool:
+    """Обновить файл в GitHub."""
+    if not GITHUB_TOKEN:
+        logger.warning("No GitHub token, cannot update file")
+        return False
+    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(GITHUB_REPO)
+        content = repo.get_contents(filepath)
+        repo.update_file(filepath, message, new_content, content.sha)
+        logger.info(f"Updated {filepath} in GitHub")
+        return True
+    except Exception as e:
+        logger.error(f"GitHub write error: {e}")
+        return False
+
+def get_tasks() -> str:
+    """Получить задачи (из GitHub если есть токен, иначе локально)."""
+    return get_github_file("tasks.md")
+
+def save_tasks(new_content: str, message: str = "Update tasks") -> bool:
+    """Сохранить задачи в GitHub."""
+    return update_github_file("tasks.md", new_content, message)
+
 
 # === GOOGLE CALENDAR ===
 
@@ -397,7 +441,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /todo — обзор задач через Лею."""
-    tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
+    tasks = get_tasks()
     calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
@@ -426,6 +470,55 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Команда /week — показать календарь на неделю."""
     calendar = get_week_events()
     await update.message.reply_text(f"Календарь на неделю:\n{calendar}")
+
+
+async def addtask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /add <задача> — добавить задачу."""
+    if not context.args:
+        await update.message.reply_text("Использование: /add <задача>\nПример: /add Позвонить врачу")
+        return
+
+    task_text = " ".join(context.args)
+    tasks = get_tasks()
+
+    # Добавляем в раздел "Срочное"
+    if "## Срочное" in tasks:
+        tasks = tasks.replace("## Срочное (эта неделя)", f"## Срочное (эта неделя)\n- [ ] {task_text}")
+        tasks = tasks.replace("## Срочное", f"## Срочное\n- [ ] {task_text}")
+    else:
+        tasks = f"## Срочное\n- [ ] {task_text}\n\n" + tasks
+
+    if save_tasks(tasks, f"Add task: {task_text[:30]}"):
+        await update.message.reply_text(f"Добавлено: {task_text}")
+    else:
+        await update.message.reply_text("Не удалось сохранить. Проверь GitHub токен.")
+
+
+async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /done <текст> — отметить задачу выполненной."""
+    if not context.args:
+        await update.message.reply_text("Использование: /done <часть текста задачи>")
+        return
+
+    search = " ".join(context.args).lower()
+    tasks = get_tasks()
+    lines = tasks.split("\n")
+    found = False
+
+    for i, line in enumerate(lines):
+        if "- [ ]" in line and search in line.lower():
+            lines[i] = line.replace("- [ ]", "- [x]")
+            found = True
+            break
+
+    if found:
+        new_tasks = "\n".join(lines)
+        if save_tasks(new_tasks, f"Complete task: {search[:30]}"):
+            await update.message.reply_text(f"Выполнено: {search}")
+        else:
+            await update.message.reply_text("Не удалось сохранить.")
+    else:
+        await update.message.reply_text(f"Задача не найдена: {search}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -568,6 +661,8 @@ def main() -> None:
     application.add_handler(CommandHandler("leya", switch_to_leya))
     application.add_handler(CommandHandler("todo", todo_command))
     application.add_handler(CommandHandler("week", week_command))
+    application.add_handler(CommandHandler("add", addtask_command))
+    application.add_handler(CommandHandler("done", done_command))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("sleep", sleep_reminder))
