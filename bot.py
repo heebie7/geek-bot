@@ -6,8 +6,10 @@ Geek-bot: Telegram бот с двумя режимами:
 """
 
 import os
+import json
+import base64
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -20,6 +22,9 @@ from telegram.ext import (
     filters,
 )
 import anthropic
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -105,6 +110,94 @@ BASE_DIR = os.path.dirname(__file__)
 USER_CONTEXT_FILE = os.path.join(BASE_DIR, "user_context.md")
 LEYA_CONTEXT_FILE = os.path.join(BASE_DIR, "leya_context.md")
 TASKS_FILE = os.path.join(BASE_DIR, "tasks.md")
+
+# === GOOGLE CALENDAR ===
+
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+
+def get_calendar_service():
+    """Получить сервис Google Calendar."""
+    creds = None
+
+    # Из переменной окружения (для Railway)
+    token_json_env = os.environ.get('GOOGLE_TOKEN_JSON')
+    if token_json_env:
+        token_data = base64.b64decode(token_json_env).decode('utf-8')
+        creds = Credentials.from_authorized_user_info(json.loads(token_data), SCOPES)
+    elif os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+
+    if not creds:
+        logger.warning("No Google Calendar credentials found")
+        return None
+
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            logger.info("Google token refreshed")
+        else:
+            logger.warning("Google credentials invalid and cannot refresh")
+            return None
+
+    return build('calendar', 'v3', credentials=creds)
+
+def get_week_events() -> str:
+    """Получить события на неделю."""
+    try:
+        service = get_calendar_service()
+        if not service:
+            return "Календарь не подключен."
+
+        now = datetime.now(timezone.utc)
+        week_later = now + timedelta(days=7)
+
+        events_result = service.events().list(
+            calendarId=CALENDAR_ID,
+            timeMin=now.isoformat(),
+            timeMax=week_later.isoformat(),
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+
+        events = events_result.get('items', [])
+
+        if not events:
+            return "На этой неделе нет событий в календаре."
+
+        # Группируем по дням
+        days = {}
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            # Парсим дату
+            if 'T' in start:
+                dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                day_key = dt.astimezone(TZ).strftime('%Y-%m-%d (%A)')
+                time_str = dt.astimezone(TZ).strftime('%H:%M')
+            else:
+                day_key = start + " (весь день)"
+                time_str = ""
+
+            if day_key not in days:
+                days[day_key] = []
+
+            summary = event.get('summary', 'Без названия')
+            if time_str:
+                days[day_key].append(f"  {time_str} — {summary}")
+            else:
+                days[day_key].append(f"  {summary}")
+
+        # Формируем текст
+        result = []
+        for day, items in sorted(days.items()):
+            result.append(f"\n{day}:")
+            result.extend(items)
+
+        return "\n".join(result)
+
+    except Exception as e:
+        logger.error(f"Calendar error: {e}")
+        return f"Ошибка календаря: {e}"
 
 def load_file(filepath: str, default: str = "") -> str:
     """Загрузить файл или вернуть default."""
@@ -199,25 +292,35 @@ async def switch_to_leya(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /todo — обзор задач через Лею."""
-    tasks = load_file(TASKS_FILE, "Задачи пока не добавлены. Создай файл tasks.md")
+    tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
+    calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
-    prompt = f"""Сделай краткий обзор задач на сегодня и ближайшую неделю.
+    prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
 
-Вот текущие задачи:
+## Задачи из списка:
 {tasks}
+
+## Календарь на неделю:
+{calendar}
 
 Сегодня: {current_time}
 
 Выдели:
-1. Что требует внимания сегодня
-2. Что на этой неделе
-3. Что можно отложить
+1. Что в календаре сегодня и завтра
+2. Насколько загружена неделя (много/мало/норм)
+3. Какие задачи из списка стоит сделать с учётом загрузки
 
 Будь краткой, но заботливой."""
 
     response = await get_claude_response(prompt, mode="leya")
     await update.message.reply_text(response)
+
+
+async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /week — показать календарь на неделю."""
+    calendar = get_week_events()
+    await update.message.reply_text(f"Календарь на неделю:\n{calendar}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -359,6 +462,7 @@ def main() -> None:
     application.add_handler(CommandHandler("geek", switch_to_geek))
     application.add_handler(CommandHandler("leya", switch_to_leya))
     application.add_handler(CommandHandler("todo", todo_command))
+    application.add_handler(CommandHandler("week", week_command))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("sleep", sleep_reminder))
