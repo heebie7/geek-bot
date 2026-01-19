@@ -13,11 +13,12 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -258,26 +259,45 @@ async def get_claude_response(user_message: str, mode: str = "geek") -> str:
 
 # === КОМАНДЫ ===
 
+def get_main_keyboard(mode: str = "geek"):
+    """Главная клавиатура."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Geek" if mode != "geek" else "* Geek *", callback_data="mode_geek"),
+            InlineKeyboardButton("Лея" if mode != "leya" else "* Лея *", callback_data="mode_leya"),
+        ],
+        [
+            InlineKeyboardButton("Todo", callback_data="todo"),
+            InlineKeyboardButton("Неделя", callback_data="week"),
+            InlineKeyboardButton("Статус", callback_data="status"),
+        ],
+        [
+            InlineKeyboardButton("Сон", callback_data="sleep"),
+            InlineKeyboardButton("Еда", callback_data="food"),
+            InlineKeyboardButton("Спорт", callback_data="sport"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /start."""
     context.user_data.setdefault("mode", "geek")
     mode = context.user_data["mode"]
 
     await update.message.reply_text(
-        f"Online. Текущий режим: {mode.upper()}\n\n"
-        "Команды:\n"
-        "/geek — режим Geek (ART)\n"
-        "/leya — режим Лея (коуч)\n"
-        "/todo — обзор задач\n"
-        "/status — твой статус\n"
-        "/sleep /food /sport — напоминания"
+        f"Online. Режим: {mode.upper()}",
+        reply_markup=get_main_keyboard(mode)
     )
 
 
 async def switch_to_geek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Переключиться на режим Geek."""
     context.user_data["mode"] = "geek"
-    await update.message.reply_text("Geek online. Что случилось.")
+    await update.message.reply_text(
+        "Geek online. Что случилось.",
+        reply_markup=get_main_keyboard("geek")
+    )
 
 
 async def switch_to_leya(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -285,9 +305,94 @@ async def switch_to_leya(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["mode"] = "leya"
     await update.message.reply_text(
         "Привет. Это Лея.\n\n"
-        "Я здесь, чтобы помочь тебе не потерять важное среди срочного. "
-        "Напиши /todo для обзора задач, или просто расскажи, что сейчас происходит."
+        "Я здесь, чтобы помочь тебе не потерять важное среди срочного.",
+        reply_markup=get_main_keyboard("leya")
     )
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка нажатий на кнопки."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    import random
+
+    if data == "mode_geek":
+        context.user_data["mode"] = "geek"
+        await query.edit_message_text(
+            "Geek online. Что случилось.",
+            reply_markup=get_main_keyboard("geek")
+        )
+
+    elif data == "mode_leya":
+        context.user_data["mode"] = "leya"
+        await query.edit_message_text(
+            "Привет. Это Лея.\n\nЧто сейчас важно?",
+            reply_markup=get_main_keyboard("leya")
+        )
+
+    elif data == "todo":
+        tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
+        calendar = get_week_events()
+        current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+
+        prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
+
+## Задачи из списка:
+{tasks}
+
+## Календарь на неделю:
+{calendar}
+
+Сегодня: {current_time}
+
+Выдели:
+1. Что в календаре сегодня и завтра
+2. Насколько загружена неделя
+3. Какие задачи стоит сделать
+
+Будь краткой."""
+
+        response = await get_claude_response(prompt, mode="leya")
+        await query.message.reply_text(response)
+
+    elif data == "week":
+        calendar = get_week_events()
+        await query.message.reply_text(f"Календарь на неделю:\n{calendar}")
+
+    elif data == "status":
+        now = datetime.now(TZ)
+        hour = now.hour
+        mode = context.user_data.get("mode", "geek")
+
+        if hour >= 1 and hour < 7:
+            msg = f"{now.strftime('%H:%M')}. Ты должна спать."
+        elif hour >= 7 and hour < 12:
+            msg = f"{now.strftime('%H:%M')}. Утро. Завтракала?"
+        elif hour >= 12 and hour < 14:
+            msg = f"{now.strftime('%H:%M')}. Время обеда."
+        elif hour >= 14 and hour < 19:
+            msg = f"{now.strftime('%H:%M')}. Рабочее время."
+        elif hour >= 19 and hour < 22:
+            msg = f"{now.strftime('%H:%M')}. Вечер. Ужинала?"
+        else:
+            msg = f"{now.strftime('%H:%M')}. Скоро спать."
+
+        msg += f"\nРежим: {mode.upper()}"
+        await query.edit_message_text(msg, reply_markup=get_main_keyboard(mode))
+
+    elif data == "sleep":
+        msg = random.choice(REMINDERS["sleep"])
+        await query.message.reply_text(msg)
+
+    elif data == "food":
+        msg = random.choice(REMINDERS["food"])
+        await query.message.reply_text(msg)
+
+    elif data == "sport":
+        msg = random.choice(REMINDERS["sport"])
+        await query.message.reply_text(msg)
 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -470,6 +575,9 @@ def main() -> None:
     application.add_handler(CommandHandler("sport", sport_reminder))
     application.add_handler(CommandHandler("reminders", setup_reminders))
     application.add_handler(CommandHandler("stop_reminders", stop_reminders))
+
+    # Обработка кнопок
+    application.add_handler(CallbackQueryHandler(button_callback))
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
