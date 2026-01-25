@@ -287,7 +287,7 @@ REMINDERS = {
 # Платные но дешёвые:
 # - anthropic/claude-3-haiku (~$0.25/1M tokens)
 # - google/gemini-flash-1.5 (~$0.075/1M tokens)
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
 
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
     """Получить ответ от OpenRouter API."""
