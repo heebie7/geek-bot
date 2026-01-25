@@ -22,7 +22,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from google import genai
+from openai import OpenAI
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -32,7 +32,7 @@ from github import Github
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Timezone
 TZ = ZoneInfo("Asia/Tbilisi")
@@ -44,8 +44,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Gemini client
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+# OpenRouter client (OpenAI-compatible API)
+openrouter_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
 # === ПРОМПТЫ ===
 
@@ -275,10 +278,19 @@ REMINDERS = {
 }
 
 
-# === GEMINI API ===
+# === OPENROUTER API ===
 
-async def get_gemini_response(user_message: str, mode: str = "geek") -> str:
-    """Получить ответ от Gemini API."""
+# Бесплатные модели на OpenRouter (лимиты ~20 req/min)
+# - meta-llama/llama-3.2-3b-instruct:free
+# - google/gemma-2-9b-it:free
+# - mistralai/mistral-7b-instruct:free
+# Платные но дешёвые:
+# - anthropic/claude-3-haiku (~$0.25/1M tokens)
+# - google/gemini-flash-1.5 (~$0.075/1M tokens)
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free")
+
+async def get_llm_response(user_message: str, mode: str = "geek") -> str:
+    """Получить ответ от OpenRouter API."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
     if mode == "leya":
@@ -289,17 +301,17 @@ async def get_gemini_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=user_message,
-            config={
-                "system_instruction": system,
-                "max_output_tokens": 800,
-            }
+        response = openrouter_client.chat.completions.create(
+            model=OPENROUTER_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=800,
         )
-        return response.text
+        return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Gemini API error: {e}")
+        logger.error(f"OpenRouter API error: {e}")
         return "Проблемы с подключением. Попробуй позже."
 
 
@@ -400,7 +412,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 Будь краткой."""
 
-        response = await get_gemini_response(prompt, mode="leya")
+        response = await get_llm_response(prompt, mode="leya")
         await query.message.reply_text(response)
 
     elif data == "week":
@@ -464,7 +476,7 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 Будь краткой, но заботливой."""
 
-    response = await get_gemini_response(prompt, mode="leya")
+    response = await get_llm_response(prompt, mode="leya")
     await update.message.reply_text(response)
 
 
@@ -578,7 +590,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
 
-    response = await get_gemini_response(user_message, mode=mode)
+    response = await get_llm_response(user_message, mode=mode)
     await update.message.reply_text(response)
 
 
