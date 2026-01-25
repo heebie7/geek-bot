@@ -22,7 +22,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import anthropic
+import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -32,7 +32,7 @@ from github import Github
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Timezone
 TZ = ZoneInfo("Asia/Tbilisi")
@@ -44,8 +44,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Claude client
-claude = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+# Gemini client
+genai.configure(api_key=GEMINI_API_KEY)
 
 # === ПРОМПТЫ ===
 
@@ -275,10 +275,10 @@ REMINDERS = {
 }
 
 
-# === CLAUDE API ===
+# === GEMINI API ===
 
-async def get_claude_response(user_message: str, mode: str = "geek") -> str:
-    """Получить ответ от Claude API."""
+async def get_gemini_response(user_message: str, mode: str = "geek") -> str:
+    """Получить ответ от Gemini API."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
     if mode == "leya":
@@ -289,15 +289,14 @@ async def get_claude_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     try:
-        response = claude.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=800,
-            system=system,
-            messages=[{"role": "user", "content": user_message}]
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash",
+            system_instruction=system
         )
-        return response.content[0].text
+        response = model.generate_content(user_message)
+        return response.text
     except Exception as e:
-        logger.error(f"Claude API error: {e}")
+        logger.error(f"Gemini API error: {e}")
         return "Проблемы с подключением. Попробуй позже."
 
 
@@ -398,7 +397,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 Будь краткой."""
 
-        response = await get_claude_response(prompt, mode="leya")
+        response = await get_gemini_response(prompt, mode="leya")
         await query.message.reply_text(response)
 
     elif data == "week":
@@ -462,7 +461,7 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 Будь краткой, но заботливой."""
 
-    response = await get_claude_response(prompt, mode="leya")
+    response = await get_gemini_response(prompt, mode="leya")
     await update.message.reply_text(response)
 
 
@@ -576,7 +575,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
 
-    response = await get_claude_response(user_message, mode=mode)
+    response = await get_gemini_response(user_message, mode=mode)
     await update.message.reply_text(response)
 
 
