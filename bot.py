@@ -22,7 +22,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from openai import OpenAI
+import anthropic
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -32,7 +32,7 @@ from github import Github
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Timezone
 TZ = ZoneInfo("Asia/Tbilisi")
@@ -44,11 +44,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# OpenRouter client (OpenAI-compatible API)
-openrouter_client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
+# Anthropic client
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # === ПРОМПТЫ ===
 
@@ -278,19 +275,12 @@ REMINDERS = {
 }
 
 
-# === OPENROUTER API ===
+# === ANTHROPIC API ===
 
-# Бесплатные модели на OpenRouter (лимиты ~20 req/min)
-# - meta-llama/llama-3.2-3b-instruct:free
-# - google/gemma-2-9b-it:free
-# - mistralai/mistral-7b-instruct:free
-# Платные но дешёвые:
-# - anthropic/claude-3-haiku (~$0.25/1M tokens)
-# - google/gemini-flash-1.5 (~$0.075/1M tokens)
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
 
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
-    """Получить ответ от OpenRouter API."""
+    """Получить ответ от Anthropic API."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
     if mode == "leya":
@@ -301,17 +291,17 @@ async def get_llm_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     try:
-        response = openrouter_client.chat.completions.create(
-            model=OPENROUTER_MODEL,
+        response = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=800,
+            system=system,
             messages=[
-                {"role": "system", "content": system},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=800,
         )
-        return response.choices[0].message.content
+        return response.content[0].text
     except Exception as e:
-        logger.error(f"OpenRouter API error: {e}")
+        logger.error(f"Anthropic API error: {e}")
         return "Проблемы с подключением. Попробуй позже."
 
 
