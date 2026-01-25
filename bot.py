@@ -23,7 +23,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import anthropic
+from openai import OpenAI
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -33,7 +33,7 @@ from github import Github
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Timezone
 TZ = ZoneInfo("Asia/Tbilisi")
@@ -45,8 +45,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Anthropic client
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+# OpenAI client
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # === ПРОМПТЫ ===
 
@@ -587,12 +587,12 @@ REMINDERS = {
 }
 
 
-# === ANTHROPIC API ===
+# === OPENAI API ===
 
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
-    """Получить ответ от Anthropic API."""
+    """Получить ответ от OpenAI API."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
     if mode == "leya":
@@ -603,17 +603,17 @@ async def get_llm_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     try:
-        response = anthropic_client.messages.create(
-            model=ANTHROPIC_MODEL,
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
             max_tokens=800,
-            system=system,
             messages=[
+                {"role": "system", "content": system},
                 {"role": "user", "content": user_message}
             ],
         )
-        return response.content[0].text
+        return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Anthropic API error: {e}")
+        logger.error(f"OpenAI API error: {e}")
         return "Проблемы с подключением. Попробуй позже."
 
 
