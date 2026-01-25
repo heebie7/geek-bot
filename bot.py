@@ -22,7 +22,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import google.generativeai as genai
+from google import genai
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -45,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Gemini client
-genai.configure(api_key=GEMINI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # === ПРОМПТЫ ===
 
@@ -289,11 +289,14 @@ async def get_gemini_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=system
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=user_message,
+            config={
+                "system_instruction": system,
+                "max_output_tokens": 800,
+            }
         )
-        response = model.generate_content(user_message)
         return response.text
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
