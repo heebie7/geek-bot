@@ -597,7 +597,7 @@ REMINDERS = {
 
 # === LLM API ===
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
