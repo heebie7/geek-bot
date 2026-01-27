@@ -23,7 +23,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import google.generativeai as genai
+from google import genai
 from openai import OpenAI
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -48,8 +48,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # LLM clients
+gemini_client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 else:
@@ -611,13 +612,16 @@ async def get_llm_response(user_message: str, mode: str = "geek") -> str:
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
     # Try Gemini first
-    if GEMINI_API_KEY:
+    if gemini_client:
         try:
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=system
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=user_message,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=800,
+                ),
             )
-            response = model.generate_content(user_message)
             return response.text
         except Exception as e:
             logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
