@@ -869,7 +869,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /todo — обзор задач через Лею."""
-    tasks = get_tasks()
+    tasks = get_life_tasks()
     calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
@@ -916,16 +916,8 @@ async def addtask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     task_text = " ".join(context.args)
-    tasks = get_tasks()
 
-    # Добавляем в раздел "Срочное"
-    if "## Срочное" in tasks:
-        tasks = tasks.replace("## Срочное (эта неделя)", f"## Срочное (эта неделя)\n- [ ] {task_text}")
-        tasks = tasks.replace("## Срочное", f"## Срочное\n- [ ] {task_text}")
-    else:
-        tasks = f"## Срочное\n- [ ] {task_text}\n\n" + tasks
-
-    if save_tasks(tasks, f"Add task: {task_text[:30]}"):
+    if add_task_to_zone(task_text, "срочное"):
         await update.message.reply_text(f"Добавлено: {task_text}")
     else:
         await update.message.reply_text("Не удалось сохранить. Проверь GitHub токен.")
@@ -938,7 +930,7 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     search = " ".join(context.args).lower()
-    tasks = get_tasks()
+    tasks = get_life_tasks()
     lines = tasks.split("\n")
     found = False
 
@@ -950,7 +942,7 @@ async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if found:
         new_tasks = "\n".join(lines)
-        if save_tasks(new_tasks, f"Complete task: {search[:30]}"):
+        if save_writing_file("life/tasks.md", new_tasks, f"Complete task: {search[:30]}"):
             await update.message.reply_text(f"Выполнено: {search}")
         else:
             await update.message.reply_text("Не удалось сохранить.")
