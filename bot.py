@@ -23,6 +23,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+import google.generativeai as genai
 from openai import OpenAI
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -33,6 +34,7 @@ from github import Github
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Timezone
@@ -45,8 +47,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# OpenAI client
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+# LLM clients
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+if OPENAI_API_KEY:
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+else:
+    openai_client = None
 
 # === ПРОМПТЫ ===
 
@@ -587,12 +594,13 @@ REMINDERS = {
 }
 
 
-# === OPENAI API ===
+# === LLM API ===
 
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
-    """Получить ответ от OpenAI API."""
+    """Получить ответ от LLM. Gemini primary, OpenAI fallback."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
     if mode == "leya":
@@ -602,19 +610,34 @@ async def get_llm_response(user_message: str, mode: str = "geek") -> str:
         user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
         system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
 
-    try:
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            max_tokens=800,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_message}
-            ],
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
-        return "Проблемы с подключением. Попробуй позже."
+    # Try Gemini first
+    if GEMINI_API_KEY:
+        try:
+            model = genai.GenerativeModel(
+                model_name=GEMINI_MODEL,
+                system_instruction=system
+            )
+            response = model.generate_content(user_message)
+            return response.text
+        except Exception as e:
+            logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
+
+    # Fallback to OpenAI
+    if openai_client:
+        try:
+            response = openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                max_tokens=800,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_message}
+                ],
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+
+    return "Оба API недоступны. Попробуй позже."
 
 
 # === КОМАНДЫ ===
