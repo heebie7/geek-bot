@@ -1264,9 +1264,26 @@ async def stop_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("Напоминания отключены.")
 
 
+async def set_bot_commands(application) -> None:
+    """Установить меню команд бота."""
+    commands = [
+        ("geek", "Режим Geek (ART)"),
+        ("leya", "Режим Лея (коуч)"),
+        ("todo", "Обзор задач"),
+        ("add", "Добавить задачу"),
+        ("done", "Отметить выполненной"),
+        ("week", "Календарь на неделю"),
+        ("status", "Текущий статус"),
+        ("remind", "Создать напоминание"),
+        ("myreminders", "Мои напоминания"),
+    ]
+    await application.bot.set_my_commands(commands)
+
+
 def main() -> None:
     """Запуск бота."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application.post_init = set_bot_commands
 
     # Команды
     application.add_handler(CommandHandler("start", start))
