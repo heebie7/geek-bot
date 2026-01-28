@@ -1329,10 +1329,7 @@ async def set_bot_commands(application) -> None:
         ("leya", "Режим Лея (коуч)"),
         ("todo", "Обзор задач"),
         ("next", "Шаги по проектам"),
-        ("add", "Добавить задачу"),
-        ("done", "Отметить выполненной"),
         ("week", "Календарь на неделю"),
-        ("remind", "Создать напоминание"),
     ]
     await application.bot.set_my_commands(commands)
 
