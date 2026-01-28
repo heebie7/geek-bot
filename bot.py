@@ -347,6 +347,59 @@ def create_rawnote(title: str, content: str) -> bool:
 
 REMINDERS_FILE = "reminders.json"
 FAMILY_FILE = "family.json"
+MUTE_FILE = "mute_settings.json"
+
+def get_mute_settings() -> dict:
+    """Получить настройки mute из GitHub."""
+    content = get_github_file(MUTE_FILE)
+    if content and content != "Файл не найден.":
+        try:
+            return json.loads(content)
+        except:
+            pass
+    return {}
+
+def save_mute_settings(settings: dict) -> bool:
+    """Сохранить настройки mute в GitHub."""
+    content = json.dumps(settings, ensure_ascii=False, indent=2)
+    return update_github_file(MUTE_FILE, content, "Update mute settings")
+
+def is_muted(chat_id: int) -> bool:
+    """Проверить, включен ли mute для пользователя."""
+    settings = get_mute_settings()
+    user_settings = settings.get(str(chat_id), {})
+
+    if not user_settings.get("muted", False):
+        return False
+
+    # Проверяем, не истёк ли временный mute
+    until = user_settings.get("until")
+    if until:
+        until_dt = datetime.fromisoformat(until)
+        if datetime.now(TZ) > until_dt:
+            # Mute истёк — снимаем
+            user_settings["muted"] = False
+            user_settings.pop("until", None)
+            settings[str(chat_id)] = user_settings
+            save_mute_settings(settings)
+            return False
+
+    return True
+
+def set_mute(chat_id: int, muted: bool, until: datetime = None) -> bool:
+    """Установить статус mute для пользователя."""
+    settings = get_mute_settings()
+    user_settings = settings.get(str(chat_id), {})
+
+    user_settings["muted"] = muted
+    if until:
+        user_settings["until"] = until.isoformat()
+    elif "until" in user_settings:
+        del user_settings["until"]
+
+    settings[str(chat_id)] = user_settings
+    return save_mute_settings(settings)
+
 
 def get_family() -> dict:
     """Получить список семьи (username -> chat_id)."""
@@ -1394,13 +1447,37 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 Какие конкретные маленькие шаги (15-30 минут) можно добавить в Срочное на этой неделе?
 
-Предложи 2-3 первых шага с указанием проекта. Для каждого добавь тег [SAVE:task:срочное:текст задачи].
+Предложи 2-3 первых шага. Формат ответа:
+1. Краткое описание шага (время)
+2. Краткое описание шага (время)
+3. Краткое описание шага (время)
+
+НЕ добавляй теги SAVE — просто опиши шаги.
 
 Задачи:
 {tasks}"""
 
     response = await get_llm_response(prompt, mode=mode)
-    await update.message.reply_text(response)
+
+    # Извлекаем шаги и создаём кнопки для каждого
+    lines = [l.strip() for l in response.split('\n') if l.strip() and l.strip()[0].isdigit()]
+    if lines:
+        # Сохраняем шаги для кнопок
+        context.user_data["pending_steps"] = lines[:3]
+
+        keyboard = []
+        for i, step in enumerate(lines[:3]):
+            # Убираем номер из начала
+            clean_step = re.sub(r'^\d+[\.\)]\s*', '', step)
+            keyboard.append([InlineKeyboardButton(f"+ {clean_step[:40]}...", callback_data=f"add_step_{i}")])
+        keyboard.append([InlineKeyboardButton("Не добавлять", callback_data="cancel_steps")])
+
+        await update.message.reply_text(
+            response + "\n\n— Какие шаги добавить в Срочное?",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await update.message.reply_text(response)
 
 
 async def set_bot_commands(application) -> None:
