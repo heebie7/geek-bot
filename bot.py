@@ -241,16 +241,8 @@ def update_github_file(filepath: str, new_content: str, message: str) -> bool:
         logger.error(f"GitHub write error: {e}")
         return False
 
-def get_tasks() -> str:
-    """Получить задачи (из GitHub если есть токен, иначе локально)."""
-    return get_github_file("tasks.md")
-
-def save_tasks(new_content: str, message: str = "Update tasks") -> bool:
-    """Сохранить задачи в GitHub."""
-    return update_github_file("tasks.md", new_content, message)
-
-
 # === WRITING WORKSPACE (для идей/задач/заметок) ===
+# Все задачи хранятся в Writing-space репо: life/tasks.md
 
 def get_writing_file(filepath: str) -> str:
     """Получить файл из Writing-space репо."""
