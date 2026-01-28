@@ -687,7 +687,7 @@ def get_main_keyboard(mode: str = "geek"):
         [
             InlineKeyboardButton("Todo", callback_data="todo"),
             InlineKeyboardButton("Неделя", callback_data="week"),
-            InlineKeyboardButton("Статус", callback_data="status"),
+            InlineKeyboardButton("Шаги", callback_data="next_steps"),
         ],
         [
             InlineKeyboardButton("Сон", callback_data="sleep"),
@@ -818,6 +818,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "sport":
         msg = random.choice(REMINDERS["sport"])
         await query.message.reply_text(msg)
+
+    elif data == "next_steps":
+        tasks = get_life_tasks()
+        mode = context.user_data.get("mode", "geek")
+
+        prompt = f"""Посмотри на задачи из больших проектов и раздела Драйв.
+
+Какие конкретные маленькие шаги (15-30 минут) можно добавить в Срочное на этой неделе?
+
+Предложи 2-3 первых шага с указанием проекта. Для каждого добавь тег [SAVE:task:срочное:текст задачи].
+
+Задачи:
+{tasks}"""
+
+        response = await get_llm_response(prompt, mode=mode)
+        await query.message.reply_text(response)
 
     # === Обработка сохранения задач/заметок ===
     elif data == "save_confirm":
@@ -1288,18 +1304,35 @@ async def stop_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("Напоминания отключены.")
 
 
+async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /next — предложить шаги по большим проектам для срочного."""
+    tasks = get_life_tasks()
+    mode = context.user_data.get("mode", "geek")
+
+    prompt = f"""Посмотри на задачи из больших проектов и раздела Драйв.
+
+Какие конкретные маленькие шаги (15-30 минут) можно добавить в Срочное на этой неделе?
+
+Предложи 2-3 первых шага с указанием проекта. Для каждого добавь тег [SAVE:task:срочное:текст задачи].
+
+Задачи:
+{tasks}"""
+
+    response = await get_llm_response(prompt, mode=mode)
+    await update.message.reply_text(response)
+
+
 async def set_bot_commands(application) -> None:
     """Установить меню команд бота."""
     commands = [
         ("geek", "Режим Geek (ART)"),
         ("leya", "Режим Лея (коуч)"),
         ("todo", "Обзор задач"),
+        ("next", "Шаги по проектам"),
         ("add", "Добавить задачу"),
         ("done", "Отметить выполненной"),
         ("week", "Календарь на неделю"),
-        ("status", "Текущий статус"),
         ("remind", "Создать напоминание"),
-        ("myreminders", "Мои напоминания"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -1315,6 +1348,7 @@ def main() -> None:
     application.add_handler(CommandHandler("leya", switch_to_leya))
     application.add_handler(CommandHandler("todo", todo_command))
     application.add_handler(CommandHandler("week", week_command))
+    application.add_handler(CommandHandler("next", next_steps_command))
     application.add_handler(CommandHandler("tasks", tasks_command))
     application.add_handler(CommandHandler("add", addtask_command))
     application.add_handler(CommandHandler("done", done_command))
