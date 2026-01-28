@@ -14,7 +14,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -698,6 +698,15 @@ def get_main_keyboard(mode: str = "geek"):
     return InlineKeyboardMarkup(keyboard)
 
 
+def get_reply_keyboard():
+    """Постоянная клавиатура внизу чата."""
+    keyboard = [
+        [KeyboardButton("📋 Todo"), KeyboardButton("📅 Неделя"), KeyboardButton("🎯 Шаги")],
+        [KeyboardButton("🤖 Geek"), KeyboardButton("🧭 Лея")],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /start."""
     context.user_data.setdefault("mode", "geek")
@@ -712,7 +721,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(
         f"Online. Режим: {mode.upper()}",
-        reply_markup=get_main_keyboard(mode)
+        reply_markup=get_reply_keyboard()
     )
 
 
@@ -721,7 +730,7 @@ async def switch_to_geek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["mode"] = "geek"
     await update.message.reply_text(
         "Geek online. Что случилось.",
-        reply_markup=get_main_keyboard("geek")
+        reply_markup=get_reply_keyboard()
     )
 
 
@@ -729,9 +738,8 @@ async def switch_to_leya(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Переключиться на режим Лея."""
     context.user_data["mode"] = "leya"
     await update.message.reply_text(
-        "Привет. Это Лея.\n\n"
-        "Я здесь, чтобы помочь тебе не потерять важное среди срочного.",
-        reply_markup=get_main_keyboard("leya")
+        "Привет. Это Лея.\n\nЯ здесь, чтобы помочь тебе не потерять важное среди срочного.",
+        reply_markup=get_reply_keyboard()
     )
 
 
@@ -1245,9 +1253,26 @@ def parse_save_tag(response: str) -> tuple:
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработка текстовых сообщений через Claude API."""
+    """Обработка текстовых сообщений."""
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
+
+    # Обработка кнопок reply keyboard
+    if user_message == "📋 Todo":
+        await todo_command(update, context)
+        return
+    elif user_message == "📅 Неделя":
+        await week_command(update, context)
+        return
+    elif user_message == "🎯 Шаги":
+        await next_steps_command(update, context)
+        return
+    elif user_message == "🤖 Geek":
+        await switch_to_geek(update, context)
+        return
+    elif user_message == "🧭 Лея":
+        await switch_to_leya(update, context)
+        return
 
     response = await get_llm_response(user_message, mode=mode)
 
