@@ -1323,13 +1323,9 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def set_bot_commands(application) -> None:
-    """Установить меню команд бота."""
+    """Установить меню команд бота — только /start."""
     commands = [
-        ("geek", "Режим Geek (ART)"),
-        ("leya", "Режим Лея (коуч)"),
-        ("todo", "Обзор задач"),
-        ("next", "Шаги по проектам"),
-        ("week", "Календарь на неделю"),
+        ("start", "Показать кнопки"),
     ]
     await application.bot.set_my_commands(commands)
 
