@@ -827,13 +827,37 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 Какие конкретные маленькие шаги (15-30 минут) можно добавить в Срочное на этой неделе?
 
-Предложи 2-3 первых шага с указанием проекта. Для каждого добавь тег [SAVE:task:срочное:текст задачи].
+Предложи 2-3 первых шага. Формат ответа:
+1. Краткое описание шага (время)
+2. Краткое описание шага (время)
+3. Краткое описание шага (время)
+
+НЕ добавляй теги SAVE — просто опиши шаги.
 
 Задачи:
 {tasks}"""
 
         response = await get_llm_response(prompt, mode=mode)
-        await query.message.reply_text(response)
+
+        # Извлекаем шаги и создаём кнопки для каждого
+        lines = [l.strip() for l in response.split('\n') if l.strip() and l.strip()[0].isdigit()]
+        if lines:
+            # Сохраняем шаги для кнопок
+            context.user_data["pending_steps"] = lines[:3]
+
+            keyboard = []
+            for i, step in enumerate(lines[:3]):
+                # Убираем номер из начала
+                clean_step = re.sub(r'^\d+[\.\)]\s*', '', step)
+                keyboard.append([InlineKeyboardButton(f"+ {clean_step[:40]}...", callback_data=f"add_step_{i}")])
+            keyboard.append([InlineKeyboardButton("Не добавлять", callback_data="cancel_steps")])
+
+            await query.message.reply_text(
+                response + "\n\n— Какие шаги добавить в Срочное?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await query.message.reply_text(response)
 
     # === Обработка сохранения задач/заметок ===
     elif data == "save_confirm":
@@ -912,6 +936,38 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("✗ Не удалось сохранить.")
 
         context.user_data.pop("pending_save", None)
+
+    elif data.startswith("add_step_"):
+        step_idx = int(data.replace("add_step_", ""))
+        steps = context.user_data.get("pending_steps", [])
+        if step_idx < len(steps):
+            step = steps[step_idx]
+            # Убираем номер из начала
+            clean_step = re.sub(r'^\d+[\.\)]\s*', '', step)
+            success = add_task_to_zone(clean_step, "срочное")
+            if success:
+                await query.answer(f"Добавлено в Срочное")
+                # Убираем добавленный шаг из pending
+                steps.pop(step_idx)
+                context.user_data["pending_steps"] = steps
+                # Обновляем кнопки
+                if steps:
+                    keyboard = []
+                    for i, s in enumerate(steps):
+                        clean_s = re.sub(r'^\d+[\.\)]\s*', '', s)
+                        keyboard.append([InlineKeyboardButton(f"+ {clean_s[:40]}...", callback_data=f"add_step_{i}")])
+                    keyboard.append([InlineKeyboardButton("Готово", callback_data="cancel_steps")])
+                    await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+                else:
+                    await query.edit_message_text(query.message.text.split("\n\n—")[0] + "\n\n✓ Все шаги добавлены")
+            else:
+                await query.answer("Ошибка сохранения")
+        else:
+            await query.answer("Шаг не найден")
+
+    elif data == "cancel_steps":
+        context.user_data.pop("pending_steps", None)
+        await query.edit_message_text(query.message.text.split("\n\n—")[0])
 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
