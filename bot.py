@@ -105,6 +105,9 @@ GEEK_PROMPT = """Ты — Geek, ИИ-ассистент с характером 
 ## Особенности пользователя:
 {user_context}
 
+## Текущие задачи human:
+{tasks}
+
 ## Текущее время: {current_time}
 
 Отвечай коротко. На русском языке. В стиле ART."""
@@ -150,6 +153,9 @@ LEYA_PROMPT = """Ты — Лея, коуч-навигатор.
 
 ## Контекст human:
 {user_context}
+
+## Текущие задачи human:
+{tasks}
 
 ## Текущее время: {current_time}
 
@@ -603,13 +609,14 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 async def get_llm_response(user_message: str, mode: str = "geek") -> str:
     """Получить ответ от LLM. Gemini primary, OpenAI fallback."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+    tasks = get_life_tasks()
 
     if mode == "leya":
         user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
-        system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time)
+        system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks)
     else:
         user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
-        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time)
+        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks)
 
     # Try Gemini first
     if gemini_client:
