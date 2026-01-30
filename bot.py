@@ -1084,23 +1084,26 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Ищем дату 📅 YYYY-MM-DD
         due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
 
-        if has_high:
+        if has_high and not due_match:
+            # High priority без дедлайна — только в "Горит"
             high_priority.append(task_text)
         if due_match:
             due_date = due_match.group(1)
             if due_date <= end_date:
-                if not has_high:  # Не дублируем
-                    due_this_week.append(task_text)
+                due_this_week.append(task_text)
+            elif has_high:
+                # High priority с дедлайном позже этой недели — в "Горит"
+                high_priority.append(task_text)
 
     msg_parts = []
 
     if high_priority:
         msg_parts.append("🔥 Горит:\n" + "\n".join(f"• {t}" for t in high_priority))
-    else:
-        msg_parts.append("🔥 Горит: ничего")
 
     if due_this_week:
         msg_parts.append("📅 На этой неделе:\n" + "\n".join(f"• {t}" for t in due_this_week))
+    else:
+        msg_parts.append("📅 На этой неделе: ничего")
 
     total_open = sum(1 for l in lines if l.strip().startswith("- [ ]"))
     msg_parts.append(f"\nВсего открытых задач: {total_open}")
