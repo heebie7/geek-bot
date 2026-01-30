@@ -1071,6 +1071,61 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
+    elif data.startswith("proj_"):
+        proj_idx = int(data.replace("proj_", ""))
+        projects_list = context.user_data.get("projects_list", [])
+        projects_data = context.user_data.get("projects_data", {})
+
+        if proj_idx >= len(projects_list):
+            await query.edit_message_text("Проект не найден.")
+            return
+
+        proj_name = projects_list[proj_idx]
+        proj_tasks = projects_data.get(proj_name, [])
+
+        if not proj_tasks:
+            await query.edit_message_text(f"В проекте «{proj_name}» нет открытых задач.")
+            return
+
+        # Show project tasks and ask LLM to decompose
+        tasks_str = "\n".join(f"- {t}" for t in proj_tasks)
+        await query.edit_message_text(f"Анализирую проект «{proj_name}»...")
+
+        mode = context.user_data.get("mode", "geek")
+        prompt = f"""Проект: {proj_name}
+
+Текущие задачи:
+{tasks_str}
+
+Посмотри на эти задачи. Какие из них можно разбить на маленькие шаги (15-30 минут)?
+Предложи 2-3 конкретных первых шага, которые можно сделать прямо сейчас.
+
+Формат:
+1. Шаг (время) — из какой задачи
+2. Шаг (время) — из какой задачи
+3. Шаг (время) — из какой задачи
+
+НЕ добавляй теги SAVE — просто опиши шаги."""
+
+        response = await get_llm_response(prompt, mode=mode, max_tokens=1000)
+
+        # Extract steps and create buttons
+        step_lines = [l.strip() for l in response.split('\n') if l.strip() and l.strip()[0].isdigit()]
+        if step_lines:
+            context.user_data["pending_steps"] = step_lines[:3]
+            keyboard = []
+            for i, step in enumerate(step_lines[:3]):
+                clean_step = re.sub(r'^\d+[\.\)]\s*', '', step)
+                keyboard.append([InlineKeyboardButton(f"+ {clean_step[:40]}...", callback_data=f"add_step_{i}")])
+            keyboard.append([InlineKeyboardButton("Не добавлять", callback_data="cancel_steps")])
+
+            await query.message.edit_text(
+                response + "\n\n— Какие шаги добавить в Драйв?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await query.message.edit_text(response)
+
     elif data.startswith("add_step_"):
         step_idx = int(data.replace("add_step_", ""))
         steps = context.user_data.get("pending_steps", [])
@@ -1176,17 +1231,73 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.reply_text("\n\n".join(msg_parts))
 
 
+def _get_priority_tasks() -> str:
+    """Extract only priority and due-this-week tasks from tasks.md."""
+    content = get_life_tasks()
+    if not content:
+        return "Нет задач."
+
+    now = datetime.now(TZ)
+    end_of_week = now + timedelta(days=(6 - now.weekday()))
+    end_date = end_of_week.strftime("%Y-%m-%d")
+
+    lines = content.split("\n")
+    high = []
+    medium = []
+    low = []
+    due_week = []
+    current_section = ""
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ") or stripped.startswith("### ") or stripped.startswith("#### "):
+            current_section = stripped.lstrip("#").strip()
+            continue
+        if not stripped.startswith("- [ ]"):
+            continue
+
+        task_text = stripped[6:]
+        has_high = "⏫" in task_text or "🔺" in task_text
+        has_medium = "🔼" in task_text
+        has_low = "🔽" in task_text
+
+        due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
+        label = f"[{current_section}] {task_text}" if current_section else task_text
+
+        if has_high:
+            high.append(label)
+        elif has_medium:
+            medium.append(label)
+        elif has_low:
+            low.append(label)
+
+        if due_match and due_match.group(1) <= end_date and not has_high:
+            due_week.append(label)
+
+    parts = []
+    if high:
+        parts.append("⏫ Срочное:\n" + "\n".join(f"- {t}" for t in high))
+    if medium:
+        parts.append("🔼 Обычное:\n" + "\n".join(f"- {t}" for t in medium))
+    if low:
+        parts.append("🔽 Не срочное:\n" + "\n".join(f"- {t}" for t in low))
+    if due_week:
+        parts.append("📅 Дедлайн на этой неделе:\n" + "\n".join(f"- {t}" for t in due_week))
+
+    return "\n\n".join(parts) if parts else "Нет задач с приоритетами."
+
+
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /todo — обзор задач через Лею."""
-    tasks = get_life_tasks()
+    priority_tasks = _get_priority_tasks()
     calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
     whoop = _get_whoop_context()
 
     prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
 
-## Задачи из списка:
-{tasks}
+## Задачи с приоритетами:
+{priority_tasks}
 
 ## Календарь на неделю:
 {calendar}
@@ -1613,46 +1724,70 @@ async def stop_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("Напоминания отключены.")
 
 
+def _get_projects() -> dict:
+    """Extract projects and their tasks from tasks.md."""
+    content = get_life_tasks()
+    if not content:
+        return {}
+
+    projects = {}
+    current_project = None
+    in_projects_section = False
+
+    for line in content.split("\n"):
+        stripped = line.strip()
+
+        # Detect "### Проекты" section
+        if stripped == "### Проекты":
+            in_projects_section = True
+            continue
+
+        # Exit projects section on next ## heading
+        if in_projects_section and stripped.startswith("## ") and not stripped.startswith("### ") and not stripped.startswith("#### "):
+            break
+
+        if stripped.startswith("---") and in_projects_section:
+            break
+
+        if not in_projects_section:
+            continue
+
+        # Project headers are ####
+        if stripped.startswith("#### "):
+            current_project = stripped.lstrip("#").strip()
+            projects[current_project] = []
+            continue
+
+        # Tasks under current project
+        if current_project and stripped.startswith("- [ ]"):
+            projects[current_project].append(stripped[6:])
+
+    return projects
+
+
 async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /next — предложить шаги по большим проектам для срочного."""
-    tasks = get_life_tasks()
-    mode = context.user_data.get("mode", "geek")
+    """Команда /next — выбрать проект, разбить задачи на шаги."""
+    projects = _get_projects()
 
-    prompt = f"""Посмотри на задачи из раздела Проекты и Драйв.
+    if not projects:
+        await update.message.reply_text("Нет проектов в tasks.md.")
+        return
 
-Какие конкретные маленькие шаги (15-30 минут) можно добавить в Драйв на этой неделе?
+    # Show project picker
+    keyboard = []
+    for i, name in enumerate(projects.keys()):
+        short_name = name[:35]
+        keyboard.append([InlineKeyboardButton(short_name, callback_data=f"proj_{i}")])
+    keyboard.append([InlineKeyboardButton("Отмена", callback_data="cancel_steps")])
 
-Предложи 2-3 первых шага. Формат ответа:
-1. Краткое описание шага (время)
-2. Краткое описание шага (время)
-3. Краткое описание шага (время)
+    # Store projects for callback
+    context.user_data["projects_list"] = list(projects.keys())
+    context.user_data["projects_data"] = projects
 
-НЕ добавляй теги SAVE — просто опиши шаги.
-
-Задачи:
-{tasks}"""
-
-    response = await get_llm_response(prompt, mode=mode)
-
-    # Извлекаем шаги и создаём кнопки для каждого
-    lines = [l.strip() for l in response.split('\n') if l.strip() and l.strip()[0].isdigit()]
-    if lines:
-        # Сохраняем шаги для кнопок
-        context.user_data["pending_steps"] = lines[:3]
-
-        keyboard = []
-        for i, step in enumerate(lines[:3]):
-            # Убираем номер из начала
-            clean_step = re.sub(r'^\d+[\.\)]\s*', '', step)
-            keyboard.append([InlineKeyboardButton(f"+ {clean_step[:40]}...", callback_data=f"add_step_{i}")])
-        keyboard.append([InlineKeyboardButton("Не добавлять", callback_data="cancel_steps")])
-
-        await update.message.reply_text(
-            response + "\n\n— Какие шаги добавить в Драйв?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        await update.message.reply_text(response)
+    await update.message.reply_text(
+        "Какой проект разбить на шаги?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 def _get_whoop_context() -> str:
