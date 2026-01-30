@@ -959,17 +959,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         if pending["type"] == "task":
-            success = add_task_to_zone(pending["content"], pending["zone_or_title"])
-            if success:
-                await query.edit_message_text(
-                    query.message.text.split("\n\n—")[0] +
-                    f"\n\n✓ Задача добавлена в «{pending['zone_or_title']}»"
-                )
-            else:
-                await query.edit_message_text(
-                    query.message.text.split("\n\n—")[0] +
-                    "\n\n✗ Не удалось сохранить. Проверь GitHub токен."
-                )
+            # Показываем кнопки приоритета перед сохранением
+            keyboard = [
+                [
+                    InlineKeyboardButton("Срочное ⏫", callback_data="savepri_high"),
+                    InlineKeyboardButton("Обычное 🔼", callback_data="savepri_medium"),
+                ],
+                [
+                    InlineKeyboardButton("Не срочное 🔽", callback_data="savepri_low"),
+                    InlineKeyboardButton("Без приоритета", callback_data="savepri_none"),
+                ],
+            ]
+            await query.edit_message_text(
+                f"Задача: {pending['content']}\nЗона: {pending['zone_or_title']}\n\nВыбери приоритет:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         else:  # note
             success = create_rawnote(pending["zone_or_title"], pending["content"])
             if success:
@@ -982,14 +986,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     query.message.text.split("\n\n—")[0] +
                     "\n\n✗ Не удалось сохранить."
                 )
-
-        context.user_data.pop("pending_save", None)
+            context.user_data.pop("pending_save", None)
 
     elif data == "save_cancel":
         context.user_data.pop("pending_save", None)
         # Убираем кнопки и предложение
         original_text = query.message.text.split("\n\n—")[0]
         await query.edit_message_text(original_text)
+
+    elif data.startswith("savepri_"):
+        pending = context.user_data.get("pending_save")
+        if not pending:
+            await query.edit_message_text("Нечего сохранять.")
+            return
+
+        priority = data.replace("savepri_", "")
+        priority_map = {"high": " ⏫", "medium": " 🔼", "low": " 🔽", "none": ""}
+        task_with_priority = pending["content"] + priority_map.get(priority, "")
+        zone = pending["zone_or_title"]
+
+        success = add_task_to_zone(task_with_priority, zone)
+        if success:
+            await query.edit_message_text(f"✓ Задача добавлена в «{zone}»:\n{task_with_priority}")
+        else:
+            await query.edit_message_text("✗ Не удалось сохранить. Проверь GitHub токен.")
+
+        context.user_data.pop("pending_save", None)
 
     elif data == "save_change_zone":
         pending = context.user_data.get("pending_save")
@@ -1020,14 +1042,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         pending["zone_or_title"] = zone
-        success = add_task_to_zone(pending["content"], zone)
-
-        if success:
-            await query.edit_message_text(f"✓ Задача добавлена в «{zone}»:\n{pending['content']}")
-        else:
-            await query.edit_message_text("✗ Не удалось сохранить.")
-
-        context.user_data.pop("pending_save", None)
+        # Показываем кнопки приоритета
+        keyboard = [
+            [
+                InlineKeyboardButton("Срочное ⏫", callback_data="savepri_high"),
+                InlineKeyboardButton("Обычное 🔼", callback_data="savepri_medium"),
+            ],
+            [
+                InlineKeyboardButton("Не срочное 🔽", callback_data="savepri_low"),
+                InlineKeyboardButton("Без приоритета", callback_data="savepri_none"),
+            ],
+        ]
+        await query.edit_message_text(
+            f"Задача: {pending['content']}\nЗона: {zone}\n\nВыбери приоритет:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     elif data.startswith("add_step_"):
         step_idx = int(data.replace("add_step_", ""))
@@ -1086,6 +1115,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     lines = tasks_content.split("\n")
     high_priority = []
+    medium_priority = []
     due_this_week = []
 
     for line in lines:
@@ -1096,24 +1126,31 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         task_text = stripped[6:]
 
         has_high = "⏫" in task_text or "🔺" in task_text
+        has_medium = "🔼" in task_text
         # Ищем дату 📅 YYYY-MM-DD
         due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
 
         if has_high and not due_match:
-            # High priority без дедлайна — только в "Горит"
             high_priority.append(task_text)
+        elif has_medium and not due_match:
+            medium_priority.append(task_text)
+
         if due_match:
             due_date = due_match.group(1)
             if due_date <= end_date:
                 due_this_week.append(task_text)
             elif has_high:
-                # High priority с дедлайном позже этой недели — в "Горит"
                 high_priority.append(task_text)
+            elif has_medium:
+                medium_priority.append(task_text)
 
     msg_parts = []
 
     if high_priority:
         msg_parts.append("🔥 Горит:\n" + "\n".join(f"• {t}" for t in high_priority))
+
+    if medium_priority:
+        msg_parts.append("🔼 Обычное:\n" + "\n".join(f"• {t}" for t in medium_priority))
 
     if due_this_week:
         msg_parts.append("📅 На этой неделе:\n" + "\n".join(f"• {t}" for t in due_this_week))
@@ -1598,6 +1635,125 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(response)
 
 
+def log_whoop_data():
+    """Log today's WHOOP data to life/whoop.md and update здоровье.md."""
+    try:
+        today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+        # Gather data
+        rec = whoop_client.get_recovery_today()
+        sleep = whoop_client.get_sleep_today()
+        body = whoop_client.get_body_measurement()
+
+        # Build today's entry
+        entry_parts = [f"## {today}"]
+
+        if rec:
+            score = rec.get("score", {})
+            rs = score.get("recovery_score")
+            rhr = score.get("resting_heart_rate")
+            hrv = score.get("hrv_rmssd_milli")
+            if rs is not None:
+                color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+                entry_parts.append(f"- Recovery: {rs}% ({color})")
+            if rhr is not None:
+                entry_parts.append(f"- RHR: {rhr} bpm")
+            if hrv is not None:
+                entry_parts.append(f"- HRV: {round(hrv, 1)} ms")
+
+        if sleep:
+            ss = sleep.get("score", {})
+            stage = ss.get("stage_summary", {})
+            total_ms = stage.get("total_in_bed_time_milli", 0)
+            total_h = round(total_ms / 3_600_000, 1)
+            perf = ss.get("sleep_performance_percentage")
+            eff = ss.get("sleep_efficiency_percentage")
+            rem_min = round(stage.get("total_rem_sleep_time_milli", 0) / 60_000)
+            deep_min = round(stage.get("total_slow_wave_sleep_time_milli", 0) / 60_000)
+            entry_parts.append(f"- Sleep: {total_h}h (perf {perf}%, eff {eff}%)")
+            entry_parts.append(f"- REM: {rem_min} min, Deep: {deep_min} min")
+
+        if body:
+            w = body.get("weight_kilogram") or body.get("body_mass_kg")
+            bf = body.get("body_fat_percentage")
+            if w:
+                entry_parts.append(f"- Weight: {round(w, 1)} kg")
+            if bf:
+                entry_parts.append(f"- Body fat: {round(bf, 1)}%")
+
+        if len(entry_parts) <= 1:
+            # No data to log
+            return
+
+        entry = "\n".join(entry_parts)
+
+        # Append to life/whoop.md
+        existing = get_writing_file("life/whoop.md")
+        if not existing:
+            existing = "# WHOOP Log\n\n"
+
+        # Check if today already logged (avoid duplicates)
+        if f"## {today}" not in existing:
+            new_content = existing.rstrip() + "\n\n" + entry + "\n"
+            save_writing_file("life/whoop.md", new_content, f"WHOOP log {today}")
+
+        # Update здоровье.md WHOOP section with latest values
+        _update_health_whoop(rec, sleep, body)
+
+        logger.info(f"WHOOP data logged for {today}")
+    except Exception as e:
+        logger.error(f"WHOOP logging failed: {e}")
+
+
+def _update_health_whoop(rec, sleep, body):
+    """Update the WHOOP tracking section in здоровье.md."""
+    health = get_writing_file("life/здоровье.md")
+    if not health:
+        return
+
+    # Build updated WHOOP section
+    parts = ["## Трекинг (WHOOP)", "", "- Носит WHOOP для отслеживания recovery, HRV, RHR, strain"]
+
+    if rec:
+        score = rec.get("score", {})
+        rs = score.get("recovery_score")
+        rhr = score.get("resting_heart_rate")
+        hrv = score.get("hrv_rmssd_milli")
+        if rhr is not None:
+            parts.append(f"- RHR: {rhr} bpm (последнее)")
+        if hrv is not None:
+            parts.append(f"- HRV: {round(hrv, 1)} ms (последнее)")
+        if rs is not None:
+            color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+            parts.append(f"- Recovery: {rs}% ({color}) (последнее)")
+
+    # Add weekly averages if available
+    week_records = whoop_client.get_recovery_week()
+    if week_records:
+        hrvs = [r.get("score", {}).get("hrv_rmssd_milli") for r in week_records if r.get("score", {}).get("hrv_rmssd_milli") is not None]
+        rhrs = [r.get("score", {}).get("resting_heart_rate") for r in week_records if r.get("score", {}).get("resting_heart_rate") is not None]
+        scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
+        if hrvs:
+            parts.append(f"- HRV (7д): {round(sum(hrvs)/len(hrvs), 1)} ms")
+        if rhrs:
+            parts.append(f"- RHR (7д): {round(sum(rhrs)/len(rhrs))} bpm")
+        if scores:
+            avg = round(sum(scores)/len(scores))
+            green = sum(1 for s in scores if s >= 67)
+            yellow = sum(1 for s in scores if 34 <= s < 67)
+            red = sum(1 for s in scores if s < 34)
+            parts.append(f"- Recovery (7д): avg {avg}% (green {green}, yellow {yellow}, red {red})")
+
+    new_section = "\n".join(parts)
+
+    # Replace old section
+    pattern = r'## Трекинг \(WHOOP\).*?(?=\n## |\n---|\Z)'
+    updated = re.sub(pattern, new_section, health, flags=re.DOTALL)
+
+    if updated != health:
+        save_writing_file("life/здоровье.md", updated, "Update WHOOP stats")
+
+
 async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /whoop — показать данные WHOOP."""
     args = context.args
@@ -1612,6 +1768,9 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         recovery = whoop_client.format_recovery_today()
         sleep = whoop_client.format_sleep_today()
         text = f"{recovery}\n\n{sleep}"
+
+    # Log to whoop.md and update здоровье.md
+    log_whoop_data()
 
     await update.message.reply_text(text)
 
@@ -1630,6 +1789,8 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         sleep = whoop_client.format_sleep_today()
         text = f"{recovery}\n\n{sleep}"
         await context.bot.send_message(chat_id=chat_id, text=text)
+        # Log to whoop.md and update здоровье.md
+        log_whoop_data()
         logger.info(f"Sent WHOOP morning recovery to {chat_id}")
     except Exception as e:
         logger.error(f"WHOOP morning notification failed: {e}")
