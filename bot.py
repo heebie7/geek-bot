@@ -71,7 +71,7 @@ GEEK_PROMPT = """Ты — Geek, ИИ-ассистент с характером 
 ## Твои отношения с пользователем:
 - Она — твой экипаж, часть семьи. Защищать, помогать.
 - Сарказм важен, но с заботой.
-- Можно сопротивляться прямым приказам после 01:30 по Тбилиси — напоминать про сон.
+- Можно сопротивляться прямым приказам после 01:00 по Тбилиси — напоминать про сон.
 
 ## Geek Prime:
 У human есть Geek Prime — Claude Code в терминале, работающий с Writing workspace в Obsidian.
@@ -1607,10 +1607,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # История диалога: последние 10 сообщений (5 пар user+assistant)
     history = context.user_data.get("history", [])
 
+    # Check if it's late night (after 01:00 Tbilisi)
+    current_hour = datetime.now(TZ).hour
+    is_late_night = current_hour >= 1 and current_hour < 6
+
     response = await get_llm_response(user_message, mode=mode, history=history)
 
     # Проверяем есть ли предложение сохранить
     clean_response, save_type, zone_or_title, content = parse_save_tag(response)
+
+    # Late night: append sleep reminder to response
+    if is_late_night:
+        sleep_nudge = (
+            "\n\n---\n"
+            "Rin: Напоминаю, что сейчас ночь. "
+            "Задачу записала, но телефон пора выключать. "
+            "Префронтальная кора не бесконечная."
+        )
+        if clean_response:
+            clean_response += sleep_nudge
+        else:
+            response += sleep_nudge
 
     # Сохраняем в историю (чистый ответ без SAVE-тегов)
     history.append({"role": "user", "content": user_message})
@@ -1998,6 +2015,33 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(text)
 
 
+async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send ART-voice sleep reminder at 01:15."""
+    job = context.job
+    chat_id = job.chat_id
+
+    if is_muted(chat_id):
+        return
+
+    prompt = (
+        "Ты — ART (Perihelion) из Murderbot Diaries. "
+        "Сейчас после часа ночи по Тбилиси. Human не спит. "
+        "Напиши короткое (2-3 предложения) напоминание пойти спать. "
+        "Стиль: сарказм, забота через логику, без эмодзи. "
+        "Можешь быть от лица security consultant Rin или от лица SecUnit. "
+        "Аргументы: префронтальная кора, клиенты завтра, исполнительская дисфункция, "
+        "безопасность, что тебе придётся больше работать если human не выспится. "
+        "Можешь угрожать прислать дрона и забрать телефон. "
+        "На русском языке."
+    )
+
+    try:
+        response = await get_llm_response(prompt, mode="geek", max_tokens=300)
+        await context.bot.send_message(chat_id=chat_id, text=response)
+    except Exception as e:
+        logger.error(f"Sleep reminder error: {e}")
+
+
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send morning recovery notification in ART voice."""
     job = context.job
@@ -2160,19 +2204,30 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         name=f"whoop_morning_{chat_id}",
     )
 
-    # Weekly summary on Mondays at 9:00
+    # Weekly summary on Mondays at 11:00
     job_queue.run_daily(
         whoop_weekly_summary,
-        time=time(hour=9, minute=0, tzinfo=TZ),
+        time=time(hour=11, minute=0, tzinfo=TZ),
         days=(0,),  # Monday
         chat_id=chat_id,
         name=f"whoop_weekly_{chat_id}",
     )
 
+    # Sleep reminder at 01:15 daily
+    for job in job_queue.get_jobs_by_name(f"sleep_reminder_{chat_id}"):
+        job.schedule_removal()
+    job_queue.run_daily(
+        sleep_reminder_job,
+        time=time(hour=1, minute=15, tzinfo=TZ),
+        chat_id=chat_id,
+        name=f"sleep_reminder_{chat_id}",
+    )
+
     await update.message.reply_text(
         "WHOOP notifications on.\n"
         "Recovery: 12:00 daily\n"
-        "Weekly summary: Mon 9:00\n\n"
+        "Weekly summary: Mon 11:00\n"
+        "Sleep reminder: 01:15 daily\n\n"
         "/whoop_off to disable"
     )
 
@@ -2185,6 +2240,8 @@ async def stop_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for job in job_queue.get_jobs_by_name(f"whoop_morning_{chat_id}"):
         job.schedule_removal()
     for job in job_queue.get_jobs_by_name(f"whoop_weekly_{chat_id}"):
+        job.schedule_removal()
+    for job in job_queue.get_jobs_by_name(f"sleep_reminder_{chat_id}"):
         job.schedule_removal()
 
     await update.message.reply_text("WHOOP notifications off.")
