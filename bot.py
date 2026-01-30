@@ -135,6 +135,11 @@ human: "с чего начать подготовку к воркшопу?"
 ## Текущие задачи human:
 {tasks}
 
+## Состояние тела (WHOOP):
+{whoop_data}
+Учитывай recovery и сон при рекомендациях. Если recovery красный или сон плохой — не давить, предложить восстановление.
+Если recovery зелёный — можно больше нагрузки.
+
 ## Текущее время: {current_time}
 
 Отвечай коротко. На русском языке. В стиле ART."""
@@ -208,6 +213,11 @@ human: "с чего начать подготовку к воркшопу?"
 
 ## Текущие задачи human:
 {tasks}
+
+## Состояние тела (WHOOP):
+{whoop_data}
+Учитывай recovery и сон при планировании дня. Если recovery красный или сон плохой — меньше задач, больше восстановления.
+Если recovery зелёный — можно взять больше.
 
 ## Текущее время: {current_time}
 
@@ -695,17 +705,20 @@ REMINDERS = {
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-async def get_llm_response(user_message: str, mode: str = "geek", history: list = None) -> str:
+async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800) -> str:
     """Получить ответ от LLM. Gemini primary, OpenAI fallback."""
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
     tasks = get_life_tasks()
 
+    # WHOOP data for context
+    whoop_data = _get_whoop_context()
+
     if mode == "leya":
         user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
-        system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks)
+        system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
     else:
         user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
-        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks)
+        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
 
     # Собираем контекст диалога
     if history is None:
@@ -731,7 +744,7 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                 contents=gemini_contents,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system,
-                    max_output_tokens=800,
+                    max_output_tokens=max_tokens,
                 ),
             )
             return response.text
@@ -749,7 +762,7 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
 
             response = openai_client.chat.completions.create(
                 model=OPENAI_MODEL,
-                max_tokens=800,
+                max_tokens=max_tokens,
                 messages=messages,
             )
             return response.choices[0].message.content
@@ -1168,6 +1181,7 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     tasks = get_life_tasks()
     calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+    whoop = _get_whoop_context()
 
     prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
 
@@ -1177,16 +1191,22 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 ## Календарь на неделю:
 {calendar}
 
+## Состояние тела (WHOOP):
+{whoop}
+
 Сегодня: {current_time}
 
 Выдели:
 1. Что в календаре сегодня и завтра
-2. Насколько загружена неделя (много/мало/норм)
-3. Какие задачи из списка стоит сделать с учётом загрузки
+2. Состояние тела: recovery, сон — и что это значит для нагрузки сегодня
+3. Срочные задачи (⏫) — сделать первыми
+4. Обычные задачи (🔼) — если есть ресурс
+5. Общая оценка: насколько загружена неделя
 
+Если recovery красный или сон плохой — рекомендуй меньше задач и восстановление.
 Будь краткой, но заботливой."""
 
-    response = await get_llm_response(prompt, mode="leya")
+    response = await get_llm_response(prompt, mode="leya", max_tokens=1500)
     await update.message.reply_text(response)
 
 
@@ -1633,6 +1653,50 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     else:
         await update.message.reply_text(response)
+
+
+def _get_whoop_context() -> str:
+    """Get WHOOP data as context string for LLM prompts."""
+    try:
+        parts = []
+        rec = whoop_client.get_recovery_today()
+        if rec:
+            score = rec.get("score", {})
+            rs = score.get("recovery_score")
+            rhr = score.get("resting_heart_rate")
+            hrv = score.get("hrv_rmssd_milli")
+            if rs is not None:
+                color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+                parts.append(f"Recovery сегодня: {rs}% ({color})")
+            if rhr is not None:
+                parts.append(f"RHR: {rhr} bpm")
+            if hrv is not None:
+                parts.append(f"HRV: {round(hrv, 1)} ms")
+
+        sleep = whoop_client.get_sleep_today()
+        if sleep:
+            ss = sleep.get("score", {})
+            stage = ss.get("stage_summary", {})
+            total_h = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+            perf = ss.get("sleep_performance_percentage")
+            parts.append(f"Сон: {total_h}h (performance {perf}%)")
+
+        # Weekly averages
+        week = whoop_client.get_recovery_week()
+        if week:
+            scores = [r.get("score", {}).get("recovery_score") for r in week if r.get("score", {}).get("recovery_score") is not None]
+            if scores:
+                avg = round(sum(scores) / len(scores))
+                green = sum(1 for s in scores if s >= 67)
+                red = sum(1 for s in scores if s < 34)
+                parts.append(f"Recovery за неделю: avg {avg}% (green {green}/7, red {red}/7)")
+
+        if parts:
+            return "\n".join(parts)
+        return "WHOOP: нет данных"
+    except Exception as e:
+        logger.debug(f"WHOOP context fetch failed: {e}")
+        return "WHOOP: недоступен"
 
 
 def log_whoop_data():
