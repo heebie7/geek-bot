@@ -128,7 +128,7 @@ class WhoopClient:
         """Get today's recovery data."""
         now = datetime.now(TZ)
         start = now.replace(hour=0, minute=0, second=0).isoformat()
-        data = self._api_get("/v1/recovery", params={
+        data = self._api_get("/v2/recovery", params={
             "start": start,
             "limit": 1,
         })
@@ -140,7 +140,7 @@ class WhoopClient:
         """Get last 7 days of recovery."""
         now = datetime.now(TZ)
         start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0).isoformat()
-        data = self._api_get("/v1/recovery", params={
+        data = self._api_get("/v2/recovery", params={
             "start": start,
             "limit": 7,
         })
@@ -152,7 +152,7 @@ class WhoopClient:
         """Get last night's sleep."""
         now = datetime.now(TZ)
         start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
-        data = self._api_get("/v1/activity/sleep", params={
+        data = self._api_get("/v2/activity/sleep", params={
             "start": start,
             "limit": 1,
         })
@@ -162,14 +162,14 @@ class WhoopClient:
 
     def get_body_measurement(self) -> dict | None:
         """Get latest body measurement."""
-        data = self._api_get("/v1/body_measurement", params={"limit": 1})
-        if data and data.get("records"):
-            return data["records"][0]
+        data = self._api_get("/v2/user/measurement/body")
+        if data:
+            return data
         return None
 
     def get_profile(self) -> dict | None:
         """Get user profile."""
-        return self._api_get("/v1/user/profile/basic")
+        return self._api_get("/v2/user/profile/basic")
 
     # === Formatted output ===
 
@@ -271,7 +271,7 @@ class WhoopClient:
         # Body measurement
         body = self.get_body_measurement()
         if body:
-            bm = body.get("body_mass_kg") or body.get("weight_kilogram")
+            bm = body.get("weight_kilogram") or body.get("body_mass_kg")
             bf = body.get("body_fat_percentage")
             if bm:
                 parts.append(f"Weight: {round(bm, 1)} kg")
