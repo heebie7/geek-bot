@@ -1057,6 +1057,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             await query.answer("Шаг не найден")
 
+    elif data.startswith("addpri_"):
+        task_text = context.user_data.pop("pending_add_task", None)
+        if not task_text:
+            await query.edit_message_text("Нечего добавлять.")
+            return
+
+        priority = data.replace("addpri_", "")
+        priority_map = {"high": " ⏫", "medium": " 🔼", "low": " 🔽", "none": ""}
+        task_with_priority = task_text + priority_map.get(priority, "")
+
+        if add_task_to_zone(task_with_priority, "драйв"):
+            await query.edit_message_text(f"Добавлено в Драйв: {task_with_priority}")
+        else:
+            await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
+
     elif data == "cancel_steps":
         context.user_data.pop("pending_steps", None)
         await query.edit_message_text(query.message.text.split("\n\n—")[0])
@@ -1154,17 +1169,28 @@ async def tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def addtask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /add <задача> — добавить задачу."""
+    """Команда /add <задача> — добавить задачу с выбором приоритета."""
     if not context.args:
         await update.message.reply_text("Использование: /add <задача>\nПример: /add Позвонить врачу")
         return
 
     task_text = " ".join(context.args)
+    context.user_data["pending_add_task"] = task_text
 
-    if add_task_to_zone(task_text, "драйв"):
-        await update.message.reply_text(f"Добавлено: {task_text}")
-    else:
-        await update.message.reply_text("Не удалось сохранить. Проверь GitHub токен.")
+    keyboard = [
+        [
+            InlineKeyboardButton("Срочное ⏫", callback_data="addpri_high"),
+            InlineKeyboardButton("Обычное 🔼", callback_data="addpri_medium"),
+        ],
+        [
+            InlineKeyboardButton("Не срочное 🔽", callback_data="addpri_low"),
+            InlineKeyboardButton("Без приоритета", callback_data="addpri_none"),
+        ],
+    ]
+    await update.message.reply_text(
+        f"Задача: {task_text}\n\nПриоритет?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
