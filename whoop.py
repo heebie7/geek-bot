@@ -29,6 +29,7 @@ class WhoopClient:
         self.refresh_token = os.getenv("WHOOP_REFRESH_TOKEN")
         self._github_token = os.getenv("GITHUB_TOKEN")
         self._github_repo = os.getenv("GITHUB_REPO", "heebie7/geek-bot")
+        self._tokens_loaded_at = None
 
     def _headers(self):
         return {
@@ -81,10 +82,12 @@ class WhoopClient:
             logger.error(f"Failed to save tokens to GitHub: {e}")
 
     def _load_tokens_from_github(self):
-        """Load tokens from GitHub if env vars are empty."""
-        if self.access_token and self.refresh_token:
-            return
+        """Load latest tokens from GitHub (cached for 30 min)."""
         if not self._github_token:
+            return
+        # Only reload every 30 minutes to avoid excessive GitHub API calls
+        now = datetime.now(TZ)
+        if self._tokens_loaded_at and (now - self._tokens_loaded_at) < timedelta(minutes=30):
             return
         try:
             from github import Github
@@ -94,8 +97,10 @@ class WhoopClient:
             tokens = json.loads(content.decoded_content.decode("utf-8"))
             self.access_token = tokens.get("access_token", self.access_token)
             self.refresh_token = tokens.get("refresh_token", self.refresh_token)
+            self._tokens_loaded_at = now
             logger.info("Loaded WHOOP tokens from GitHub")
         except Exception as e:
+            self._tokens_loaded_at = now  # Don't retry immediately on error
             logger.debug(f"No stored WHOOP tokens: {e}")
 
     def _api_get(self, endpoint: str, params: dict = None) -> dict | None:
@@ -110,11 +115,17 @@ class WhoopClient:
         resp = requests.get(url, headers=self._headers(), params=params)
 
         if resp.status_code == 401:
-            # Token expired, try refresh
-            if self._refresh_tokens():
-                resp = requests.get(url, headers=self._headers(), params=params)
-            else:
-                return None
+            # Token expired — force reload from GitHub, then retry
+            self._tokens_loaded_at = None
+            self._load_tokens_from_github()
+            resp = requests.get(url, headers=self._headers(), params=params)
+
+            if resp.status_code == 401:
+                # Still expired — do a full refresh
+                if self._refresh_tokens():
+                    resp = requests.get(url, headers=self._headers(), params=params)
+                else:
+                    return None
 
         if resp.status_code != 200:
             logger.error(f"WHOOP API error {resp.status_code}: {resp.text}")
