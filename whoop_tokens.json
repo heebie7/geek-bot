@@ -1,0 +1,7 @@
+{
+  "access_token": "GD1kRZN38_Nb2_OCZNOA0pV23APodLOWVLnCvyEWyBw.GvwT2dd6qhzC7zBZXM9Ux9D4cGrtkp1dR8AYAAiW5dI",
+  "expires_in": 3599,
+  "refresh_token": "SGT0DnA8M9LzuK9faFSCChz7gp11ae1yuSuUOPTWQs8.DbDW6pxZlQn94sPVW5j3SXPusTCaJKnvAPZf4AH_9Ig",
+  "scope": "offline read:recovery read:sleep read:workout read:cycles read:body_measurement read:profile",
+  "token_type": "bearer"
+}
