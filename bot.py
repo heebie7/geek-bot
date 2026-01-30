@@ -29,6 +29,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from github import Github
+from whoop import whoop_client
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -1568,6 +1569,108 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(response)
 
 
+async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /whoop — показать данные WHOOP."""
+    args = context.args
+    subcommand = args[0].lower() if args else "today"
+
+    if subcommand == "week":
+        text = whoop_client.format_weekly_summary()
+    elif subcommand == "sleep":
+        text = whoop_client.format_sleep_today()
+    else:
+        # today — recovery + sleep
+        recovery = whoop_client.format_recovery_today()
+        sleep = whoop_client.format_sleep_today()
+        text = f"{recovery}\n\n{sleep}"
+
+    await update.message.reply_text(text)
+
+
+async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send morning recovery notification (scheduled job)."""
+    job = context.job
+    chat_id = job.chat_id
+
+    # Check mute
+    if is_muted(chat_id):
+        return
+
+    try:
+        recovery = whoop_client.format_recovery_today()
+        sleep = whoop_client.format_sleep_today()
+        text = f"{recovery}\n\n{sleep}"
+        await context.bot.send_message(chat_id=chat_id, text=text)
+        logger.info(f"Sent WHOOP morning recovery to {chat_id}")
+    except Exception as e:
+        logger.error(f"WHOOP morning notification failed: {e}")
+
+
+async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send weekly WHOOP summary (scheduled job)."""
+    job = context.job
+    chat_id = job.chat_id
+
+    if is_muted(chat_id):
+        return
+
+    try:
+        text = whoop_client.format_weekly_summary()
+        await context.bot.send_message(chat_id=chat_id, text=text)
+        logger.info(f"Sent WHOOP weekly summary to {chat_id}")
+    except Exception as e:
+        logger.error(f"WHOOP weekly summary failed: {e}")
+
+
+async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /whoop_on — включить утреннее WHOOP уведомление."""
+    chat_id = update.effective_chat.id
+    job_queue = context.application.job_queue
+
+    # Remove existing WHOOP jobs for this chat
+    for job in job_queue.get_jobs_by_name(f"whoop_morning_{chat_id}"):
+        job.schedule_removal()
+    for job in job_queue.get_jobs_by_name(f"whoop_weekly_{chat_id}"):
+        job.schedule_removal()
+
+    # Daily recovery at 12:00
+    job_queue.run_daily(
+        whoop_morning_recovery,
+        time=time(hour=12, minute=0, tzinfo=TZ),
+        chat_id=chat_id,
+        name=f"whoop_morning_{chat_id}",
+    )
+
+    # Weekly summary on Mondays at 9:00
+    job_queue.run_daily(
+        whoop_weekly_summary,
+        time=time(hour=9, minute=0, tzinfo=TZ),
+        days=(0,),  # Monday
+        chat_id=chat_id,
+        name=f"whoop_weekly_{chat_id}",
+    )
+
+    await update.message.reply_text(
+        "WHOOP notifications on.\n"
+        "Recovery: 12:00 daily\n"
+        "Weekly summary: Mon 9:00\n\n"
+        "/whoop_off to disable"
+    )
+
+
+async def stop_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /whoop_off — отключить WHOOP уведомления."""
+    chat_id = update.effective_chat.id
+    job_queue = context.application.job_queue
+
+    for job in job_queue.get_jobs_by_name(f"whoop_morning_{chat_id}"):
+        job.schedule_removal()
+    for job in job_queue.get_jobs_by_name(f"whoop_weekly_{chat_id}"):
+        job.schedule_removal()
+
+    await update.message.reply_text("WHOOP notifications off.")
+
+
 async def set_bot_commands(application) -> None:
     """Установить меню команд бота — только /start."""
     commands = [
@@ -1601,6 +1704,9 @@ def main() -> None:
     application.add_handler(CommandHandler("stop_reminders", stop_reminders))
     application.add_handler(CommandHandler("remind", remind_command))
     application.add_handler(CommandHandler("myreminders", list_reminders_command))
+    application.add_handler(CommandHandler("whoop", whoop_command))
+    application.add_handler(CommandHandler("whoop_on", setup_whoop_command))
+    application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
 
     # Проверка пользовательских напоминаний каждую минуту
     job_queue = application.job_queue
