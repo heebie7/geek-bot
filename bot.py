@@ -1816,6 +1816,13 @@ def _get_whoop_context() -> str:
             perf = ss.get("sleep_performance_percentage")
             parts.append(f"Сон: {total_h}h (performance {perf}%)")
 
+        # Strain / boxing
+        cycle = whoop_client.get_cycle_today()
+        if cycle:
+            strain = round(cycle.get("score", {}).get("strain", 0), 1)
+            boxed = "да" if strain >= 5 else "нет"
+            parts.append(f"Strain: {strain} (бокс: {boxed})")
+
         # Weekly averages
         week = whoop_client.get_recovery_week()
         if week:
@@ -1843,6 +1850,7 @@ def log_whoop_data():
         rec = whoop_client.get_recovery_today()
         sleep = whoop_client.get_sleep_today()
         body = whoop_client.get_body_measurement()
+        cycle = whoop_client.get_cycle_today()
 
         # Build today's entry
         entry_parts = [f"## {today}"]
@@ -1879,6 +1887,12 @@ def log_whoop_data():
                 entry_parts.append(f"- Weight: {round(w, 1)} kg")
             if bf:
                 entry_parts.append(f"- Body fat: {round(bf, 1)}%")
+
+        if cycle:
+            cs = cycle.get("score", {})
+            strain = round(cs.get("strain", 0), 1)
+            boxed = "да" if strain >= 5 else "нет"
+            entry_parts.append(f"- Strain: {strain} (бокс: {boxed})")
 
         if len(entry_parts) <= 1:
             # No data to log
@@ -1960,35 +1974,91 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if subcommand == "week":
         text = whoop_client.format_weekly_summary()
+        # Add strain info
+        cycles = whoop_client.get_cycles_week()
+        if cycles:
+            strains = [round(c.get("score", {}).get("strain", 0), 1) for c in cycles]
+            days_boxed = sum(1 for s in strains if s >= 5)
+            text += f"\n\nStrain: {strains}\nБокс: {days_boxed}/7 дней"
     elif subcommand == "sleep":
         text = whoop_client.format_sleep_today()
     else:
-        # today — recovery + sleep
         recovery = whoop_client.format_recovery_today()
         sleep = whoop_client.format_sleep_today()
-        text = f"{recovery}\n\n{sleep}"
+        # Add today's strain
+        cycle = whoop_client.get_cycle_today()
+        strain_text = ""
+        if cycle:
+            strain = round(cycle.get("score", {}).get("strain", 0), 1)
+            boxed = "да" if strain >= 5 else "нет"
+            strain_text = f"\nStrain: {strain} (бокс: {boxed})"
+        text = f"{recovery}\n\n{sleep}{strain_text}"
 
-    # Log to whoop.md and update здоровье.md
     log_whoop_data()
-
     await update.message.reply_text(text)
 
 
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send morning recovery notification (scheduled job)."""
+    """Send morning recovery notification in ART voice."""
     job = context.job
     chat_id = job.chat_id
 
-    # Check mute
     if is_muted(chat_id):
         return
 
     try:
-        recovery = whoop_client.format_recovery_today()
-        sleep = whoop_client.format_sleep_today()
-        text = f"{recovery}\n\n{sleep}"
+        # Gather all data
+        rec = whoop_client.get_recovery_today()
+        sleep = whoop_client.get_sleep_today()
+        cycle = whoop_client.get_cycle_today()
+
+        data_parts = []
+        sleep_hours = 0
+        strain = 0
+
+        if rec:
+            score = rec.get("score", {})
+            rs = score.get("recovery_score")
+            rhr = score.get("resting_heart_rate")
+            hrv = score.get("hrv_rmssd_milli")
+            if rs is not None:
+                color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+                data_parts.append(f"Recovery: {rs}% ({color})")
+            if rhr:
+                data_parts.append(f"RHR: {rhr} bpm")
+            if hrv:
+                data_parts.append(f"HRV: {round(hrv, 1)} ms")
+
+        if sleep:
+            ss = sleep.get("score", {})
+            stage = ss.get("stage_summary", {})
+            sleep_hours = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+            perf = ss.get("sleep_performance_percentage")
+            data_parts.append(f"Сон: {sleep_hours}h (performance {perf}%)")
+
+        if cycle:
+            cs = cycle.get("score", {})
+            strain = round(cs.get("strain", 0), 1)
+            data_parts.append(f"Strain вчера: {strain}")
+
+        data_str = "\n".join(data_parts) if data_parts else "Нет данных"
+        sleep_ok = sleep_hours >= 7
+        boxed = strain >= 5
+
+        prompt = f"""Вот данные WHOOP за сегодня:
+{data_str}
+
+Сон: {sleep_hours} часов {"(достаточно)" if sleep_ok else "(МАЛО, нужно минимум 7)"}
+Бокс вчера: {"да (strain >= 5)" if boxed else f"НЕТ (strain {strain}, нужно >= 5)"}
+
+Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human body.
+Если сон меньше 7 часов — жёстко мотивируй спать больше (аргументы: мощности мозга, префронтальная кора, исполнительская дисфункция, безопасность клиентов, совместный research).
+Если strain < 5 — значит не боксировала, передай послание от security consultant Rin (он хочет смотреть сериалы, а не тренировать human лично).
+Если всё хорошо — коротко похвали в стиле ART (не сентиментально).
+Без эмодзи. На русском. 3-5 предложений."""
+
+        text = await get_llm_response(prompt, mode="geek", max_tokens=500)
         await context.bot.send_message(chat_id=chat_id, text=text)
-        # Log to whoop.md and update здоровье.md
         log_whoop_data()
         logger.info(f"Sent WHOOP morning recovery to {chat_id}")
     except Exception as e:
@@ -1996,7 +2066,7 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send weekly WHOOP summary (scheduled job)."""
+    """Send weekly WHOOP summary in ART voice."""
     job = context.job
     chat_id = job.chat_id
 
@@ -2004,8 +2074,68 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
-        text = whoop_client.format_weekly_summary()
+        # Gather weekly data
+        week_records = whoop_client.get_recovery_week()
+        week_cycles = whoop_client.get_cycles_week()
+
+        data_parts = []
+
+        if week_records:
+            scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
+            hrvs = [r.get("score", {}).get("hrv_rmssd_milli") for r in week_records if r.get("score", {}).get("hrv_rmssd_milli") is not None]
+            rhrs = [r.get("score", {}).get("resting_heart_rate") for r in week_records if r.get("score", {}).get("resting_heart_rate") is not None]
+            if scores:
+                avg = round(sum(scores) / len(scores))
+                green = sum(1 for s in scores if s >= 67)
+                yellow = sum(1 for s in scores if 34 <= s < 67)
+                red = sum(1 for s in scores if s < 34)
+                data_parts.append(f"Recovery avg: {avg}% (green {green}, yellow {yellow}, red {red})")
+            if hrvs:
+                data_parts.append(f"HRV avg: {round(sum(hrvs)/len(hrvs), 1)} ms")
+            if rhrs:
+                data_parts.append(f"RHR avg: {round(sum(rhrs)/len(rhrs))} bpm")
+
+        days_boxed = 0
+        days_missed = 0
+        strains = []
+        if week_cycles:
+            for c in week_cycles:
+                cs = c.get("score", {})
+                s = cs.get("strain", 0)
+                strains.append(round(s, 1))
+                if s >= 5:
+                    days_boxed += 1
+                else:
+                    days_missed += 1
+            data_parts.append(f"Strain за неделю: {strains}")
+            data_parts.append(f"Бокс: {days_boxed}/7 дней (пропущено: {days_missed})")
+
+        body = whoop_client.get_body_measurement()
+        if body:
+            w = body.get("weight_kilogram") or body.get("body_mass_kg")
+            bf = body.get("body_fat_percentage")
+            if w:
+                data_parts.append(f"Вес: {round(w, 1)} kg")
+            if bf:
+                data_parts.append(f"Body fat: {round(bf, 1)}%")
+
+        data_str = "\n".join(data_parts) if data_parts else "Нет данных за неделю"
+
+        prompt = f"""Еженедельный отчёт WHOOP:
+{data_str}
+
+Ты — Geek (ART из Murderbot Diaries). Сделай еженедельный отчёт о состоянии human body.
+Обязательно отметь:
+1. Recovery тренд — улучшается или ухудшается
+2. Бокс — сколько дней пропущено (strain < 5 = не боксировала). Если пропущено больше 2 — передай жёсткое послание от Rin
+3. Сон — общая оценка
+4. Рекомендации на следующую неделю в стиле ART
+
+Без эмодзи. На русском. 5-8 предложений."""
+
+        text = await get_llm_response(prompt, mode="geek", max_tokens=800)
         await context.bot.send_message(chat_id=chat_id, text=text)
+        log_whoop_data()
         logger.info(f"Sent WHOOP weekly summary to {chat_id}")
     except Exception as e:
         logger.error(f"WHOOP weekly summary failed: {e}")

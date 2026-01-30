@@ -160,6 +160,30 @@ class WhoopClient:
             return data["records"][0]
         return None
 
+    def get_cycle_today(self) -> dict | None:
+        """Get today's cycle (day strain)."""
+        now = datetime.now(TZ)
+        start = now.replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/cycle", params={
+            "start": start,
+            "limit": 1,
+        })
+        if data and data.get("records"):
+            return data["records"][0]
+        return None
+
+    def get_cycles_week(self) -> list:
+        """Get last 7 days of cycles (strain data)."""
+        now = datetime.now(TZ)
+        start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/cycle", params={
+            "start": start,
+            "limit": 7,
+        })
+        if data and data.get("records"):
+            return data["records"]
+        return []
+
     def get_body_measurement(self) -> dict | None:
         """Get latest body measurement."""
         data = self._api_get("/v2/user/measurement/body")
