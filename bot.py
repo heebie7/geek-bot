@@ -2185,6 +2185,11 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"WHOOP weekly summary failed: {e}")
 
 
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /myid — показать chat_id."""
+    await update.message.reply_text(f"Your chat_id: {update.effective_chat.id}")
+
+
 async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /whoop_on — включить утреннее WHOOP уведомление."""
     chat_id = update.effective_chat.id
@@ -2283,6 +2288,7 @@ def main() -> None:
     application.add_handler(CommandHandler("whoop", whoop_command))
     application.add_handler(CommandHandler("whoop_on", setup_whoop_command))
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
+    application.add_handler(CommandHandler("myid", myid_command))
 
     # Проверка пользовательских напоминаний каждую минуту
     job_queue = application.job_queue
