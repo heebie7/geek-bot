@@ -705,13 +705,19 @@ REMINDERS = {
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800) -> str:
-    """Получить ответ от LLM. Gemini primary, OpenAI fallback."""
-    current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
-    tasks = get_life_tasks()
+async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False) -> str:
+    """Получить ответ от LLM. Gemini primary, OpenAI fallback.
 
-    # WHOOP data for context
-    whoop_data = _get_whoop_context()
+    skip_context=True — не грузить tasks/whoop в system prompt (для команд где контекст уже в user_message).
+    """
+    current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+
+    if skip_context:
+        tasks = ""
+        whoop_data = ""
+    else:
+        tasks = get_life_tasks()
+        whoop_data = _get_whoop_context()
 
     if mode == "leya":
         user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
@@ -1317,7 +1323,7 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 Если recovery красный или сон плохой — рекомендуй меньше задач и восстановление.
 Будь краткой, но заботливой."""
 
-    response = await get_llm_response(prompt, mode="leya", max_tokens=1500)
+    response = await get_llm_response(prompt, mode="leya", max_tokens=1500, skip_context=True)
     await update.message.reply_text(response)
 
 
@@ -2036,7 +2042,7 @@ async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
     try:
-        response = await get_llm_response(prompt, mode="geek", max_tokens=300)
+        response = await get_llm_response(prompt, mode="geek", max_tokens=300, skip_context=True)
         await context.bot.send_message(chat_id=chat_id, text=response)
     except Exception as e:
         logger.error(f"Sleep reminder error: {e}")
@@ -2101,7 +2107,7 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 Если всё хорошо — коротко похвали в стиле ART (не сентиментально).
 Без эмодзи. На русском. 3-5 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=500)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
         await context.bot.send_message(chat_id=chat_id, text=text)
         log_whoop_data()
         logger.info(f"Sent WHOOP morning recovery to {chat_id}")
@@ -2177,7 +2183,7 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 Без эмодзи. На русском. 5-8 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=800)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True)
         await context.bot.send_message(chat_id=chat_id, text=text)
         log_whoop_data()
         logger.info(f"Sent WHOOP weekly summary to {chat_id}")
