@@ -1223,16 +1223,11 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if high_priority:
         msg_parts.append("🔥 Горит:\n" + "\n".join(f"• {t}" for t in high_priority))
 
-    if medium_priority:
-        msg_parts.append("🔼 Обычное:\n" + "\n".join(f"• {t}" for t in medium_priority))
-
     if due_this_week:
         msg_parts.append("📅 На этой неделе:\n" + "\n".join(f"• {t}" for t in due_this_week))
-    else:
-        msg_parts.append("📅 На этой неделе: ничего")
 
-    total_open = sum(1 for l in lines if l.strip().startswith("- [ ]"))
-    msg_parts.append(f"\nВсего открытых задач: {total_open}")
+    if not high_priority and not due_this_week:
+        msg_parts.append("Ничего срочного. Можно дышать.")
 
     await update.message.reply_text("\n\n".join(msg_parts))
 
