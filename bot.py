@@ -2294,6 +2294,29 @@ def main() -> None:
     job_queue = application.job_queue
     job_queue.run_repeating(check_reminders, interval=60, first=10)
 
+    # Автозапуск WHOOP jobs для основного пользователя
+    OWNER_CHAT_ID = 5999980147
+    job_queue.run_daily(
+        whoop_morning_recovery,
+        time=time(hour=12, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"whoop_morning_{OWNER_CHAT_ID}",
+    )
+    job_queue.run_daily(
+        whoop_weekly_summary,
+        time=time(hour=11, minute=0, tzinfo=TZ),
+        days=(0,),  # Monday
+        chat_id=OWNER_CHAT_ID,
+        name=f"whoop_weekly_{OWNER_CHAT_ID}",
+    )
+    job_queue.run_daily(
+        sleep_reminder_job,
+        time=time(hour=1, minute=15, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"sleep_reminder_{OWNER_CHAT_ID}",
+    )
+    logger.info(f"WHOOP jobs scheduled for owner {OWNER_CHAT_ID}")
+
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))
 
