@@ -702,7 +702,7 @@ REMINDERS = {
 
 # === LLM API ===
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-pro")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False) -> str:
@@ -2099,12 +2099,16 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 {data_str}
 
 Сон: {sleep_hours} часов {"(достаточно)" if sleep_ok else "(МАЛО, нужно минимум 7)"}
-Бокс вчера: {"да (strain >= 5)" if boxed else f"НЕТ (strain {strain}, нужно >= 5)"}
+Тренировка вчера: {"да (strain >= 5)" if boxed else f"НЕТ (strain {strain}, нужно >= 5)"}
 
 Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human body.
-Если сон меньше 7 часов — жёстко мотивируй спать больше (аргументы: мощности мозга, префронтальная кора, исполнительская дисфункция, безопасность клиентов, совместный research).
-Если strain < 5 — значит не боксировала, передай послание от security consultant Rin (он хочет смотреть сериалы, а не тренировать human лично).
-Если всё хорошо — коротко похвали в стиле ART (не сентиментально).
+
+ВАЖНО: Используй мотивации из контекста МАКСИМАЛЬНО БЛИЗКО К ОРИГИНАЛУ. Не пересказывай своими словами — бери готовые фразы и адаптируй только данные (числа, проценты). Стиль и формулировки должны остаться как в примерах.
+
+Если сон < 7 часов — мотивируй спать (my SecUnit, префронтальная кора, клиенты, degraded hardware).
+Если strain < 5 — мотивируй тренироваться (бокс или силовые с гирями/резинками, my SecUnit, дофамин, СДВГ).
+Если всё хорошо — коротко похвали в стиле ART (не сентиментально, "я не волновался, просто констатирую").
+
 Без эмодзи. На русском. 3-5 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
