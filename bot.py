@@ -2387,34 +2387,72 @@ def _update_health_whoop(rec, sleep, body):
 
 
 async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /whoop — показать данные WHOOP."""
+    """Команда /whoop — показать данные WHOOP с мотивацией."""
     args = context.args
     subcommand = args[0].lower() if args else "today"
 
     if subcommand == "week":
         text = whoop_client.format_weekly_summary()
-        # Add strain info
         cycles = whoop_client.get_cycles_week()
         if cycles:
             strains = [round(c.get("score", {}).get("strain", 0), 1) for c in cycles]
             days_boxed = sum(1 for s in strains if s >= 5)
             text += f"\n\nStrain: {strains}\nБокс: {days_boxed}/7 дней"
+        log_whoop_data()
+        await update.message.reply_text(text)
     elif subcommand == "sleep":
         text = whoop_client.format_sleep_today()
+        log_whoop_data()
+        await update.message.reply_text(text)
     else:
-        recovery = whoop_client.format_recovery_today()
-        sleep = whoop_client.format_sleep_today()
-        # Add today's strain
+        # Get raw data for motivation
+        sleep_data = whoop_client.get_sleep_today()
         cycle = whoop_client.get_cycle_today()
-        strain_text = ""
+
+        sleep_hours = 0
+        strain = 0
+
+        if sleep_data:
+            stage = sleep_data.get("score", {}).get("stage_summary", {})
+            sleep_hours = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+
         if cycle:
             strain = round(cycle.get("score", {}).get("strain", 0), 1)
+
+        # Get motivations
+        motivations = get_motivations_for_whoop(sleep_hours, strain)
+
+        # Build data text
+        recovery = whoop_client.format_recovery_today()
+        sleep = whoop_client.format_sleep_today()
+        strain_text = ""
+        if cycle:
             boxed = "да" if strain >= 5 else "нет"
             strain_text = f"\nStrain: {strain} (бокс: {boxed})"
-        text = f"{recovery}\n\n{sleep}{strain_text}"
 
-    log_whoop_data()
-    await update.message.reply_text(text)
+        data_text = f"{recovery}\n\n{sleep}{strain_text}"
+
+        if motivations:
+            prompt = f"""Данные WHOOP:
+{data_text}
+
+Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human.
+
+ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные выше):
+{motivations}
+
+Инструкции:
+- Сначала выведи данные как есть
+- Потом добавь 2-3 предложения комментария, используя фразы выше
+- Подставь реальные числа из данных
+- Без эмодзи. На русском."""
+
+            text = await get_llm_response(prompt, mode="geek", max_tokens=600, skip_context=True)
+        else:
+            text = data_text
+
+        log_whoop_data()
+        await update.message.reply_text(text)
 
 
 async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
