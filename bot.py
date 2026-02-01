@@ -1247,6 +1247,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             else:
                 await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
 
+    elif data.startswith("feeling_"):
+        feeling = data.replace("feeling_", "")
+        joy_stats = get_joy_stats_week()
+        joy_total = sum(joy_stats.values())
+
+        # Generate recommendation based on feeling
+        recommendations = {
+            "energized": "Отлично. Можно брать драйв-задачи. Но не забывай про maintenance — сенсорная диета нужна и в хорошие дни.",
+            "ok": "Нормально — рабочий режим. Баланс между драйвом и восстановлением.",
+            "tired": "Вымотана значит — приоритет восстановлению. Меньше драйва, больше sensory и connection. Это не опция, это maintenance.",
+            "low": "На дне. Режим выживания. Только фундамент: сон, еда, deep pressure. Драйв подождёт. Ты важнее любых задач."
+        }
+
+        rec = recommendations.get(feeling, "")
+
+        # Add Joy-based suggestions
+        if joy_stats.get("sensory", 0) < 3:
+            rec += "\n\n🧘 Sensory был редко. Добавь в каждый день."
+        if joy_stats.get("connection", 0) == 0:
+            rec += "\n\n💚 Connection = 0. Запланируй время с близкими."
+
+        feeling_emoji = {"energized": "💪", "ok": "😌", "tired": "😴", "low": "🫠"}
+        emoji = feeling_emoji.get(feeling, "")
+
+        await query.edit_message_text(
+            f"{emoji} Понял.\n\n{rec}",
+            parse_mode="Markdown"
+        )
+
     elif data.startswith("proj_"):
         proj_idx = int(data.replace("proj_", ""))
         projects_list = context.user_data.get("projects_list", [])
@@ -2468,6 +2497,82 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"WHOOP weekly summary failed: {e}")
 
 
+def get_monday_feelings_keyboard():
+    """Inline keyboard for Monday review feelings."""
+    keyboard = [
+        [
+            InlineKeyboardButton("💪 Заряжена", callback_data="feeling_energized"),
+            InlineKeyboardButton("😌 Нормально", callback_data="feeling_ok"),
+        ],
+        [
+            InlineKeyboardButton("😴 Вымотана", callback_data="feeling_tired"),
+            InlineKeyboardButton("🫠 На дне", callback_data="feeling_low"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def monday_review(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send Monday morning review: WHOOP + Joy stats + feelings question."""
+    job = context.job
+    chat_id = job.chat_id
+
+    if is_muted(chat_id):
+        return
+
+    try:
+        # 1. Joy stats
+        joy_stats = get_joy_stats_week()
+        joy_total = sum(joy_stats.values())
+        joy_msg = "📊 **Joy за прошлую неделю:**\n"
+        for cat in JOY_CATEGORIES:
+            emoji = JOY_CATEGORY_EMOJI.get(cat, "")
+            count = joy_stats.get(cat, 0)
+            bar = "█" * min(count, 7)
+            joy_msg += f"{emoji} {cat}: {count}x {bar}\n"
+
+        # 2. WHOOP summary
+        whoop_msg = ""
+        try:
+            week_records = whoop_client.get_recovery_week()
+            week_cycles = whoop_client.get_cycles_week()
+
+            if week_records:
+                scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
+                if scores:
+                    avg = round(sum(scores) / len(scores))
+                    green = sum(1 for s in scores if s >= 67)
+                    whoop_msg = f"\n💚 **WHOOP Recovery:** avg {avg}%, зелёных дней: {green}/7\n"
+
+            if week_cycles:
+                days_boxed = sum(1 for c in week_cycles if c.get("score", {}).get("strain", 0) >= 5)
+                whoop_msg += f"🥊 Бокс: {days_boxed}/7 дней\n"
+        except Exception as e:
+            logger.error(f"WHOOP data for Monday review failed: {e}")
+
+        # 3. Assessment
+        assessment = ""
+        if joy_total < 7:
+            assessment += "\n⚠️ Мало кайфа. Сенсорная диета — не опция."
+        if joy_stats.get("sensory", 0) == 0:
+            assessment += "\n⚠️ Ноль sensory за неделю. Это проблема."
+        if joy_stats.get("connection", 0) == 0:
+            assessment += "\n⚠️ Ноль connection. Human social battery требует подзарядки."
+
+        # Compose message
+        msg = f"☀️ **Понедельничный обзор**\n\n{joy_msg}{whoop_msg}{assessment}\n\n**Как ты себя чувствуешь сейчас?**"
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=get_monday_feelings_keyboard()
+        )
+        logger.info(f"Sent Monday review to {chat_id}")
+    except Exception as e:
+        logger.error(f"Monday review failed: {e}")
+
+
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /myid — показать chat_id."""
     await update.message.reply_text(f"Your chat_id: {update.effective_chat.id}")
@@ -2598,7 +2703,15 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"sleep_reminder_{OWNER_CHAT_ID}",
     )
-    logger.info(f"WHOOP jobs scheduled for owner {OWNER_CHAT_ID}")
+    # Monday review at 10:00 (before WHOOP weekly at 11:00)
+    job_queue.run_daily(
+        monday_review,
+        time=time(hour=10, minute=0, tzinfo=TZ),
+        days=(0,),  # Monday
+        chat_id=OWNER_CHAT_ID,
+        name=f"monday_review_{OWNER_CHAT_ID}",
+    )
+    logger.info(f"WHOOP and Monday review jobs scheduled for owner {OWNER_CHAT_ID}")
 
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))
