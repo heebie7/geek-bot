@@ -254,6 +254,58 @@ def get_motivations() -> str:
         logger.warning("Failed to load motivations")
     return _motivations_cache
 
+
+def get_motivations_for_whoop(sleep_hours: float, strain: float) -> str:
+    """Get relevant motivations based on WHOOP data. Returns 2-3 quotes."""
+    import random
+    content = get_motivations()
+    if not content:
+        return ""
+
+    lines = content.split("\n")
+    sleep_quotes = []
+    exercise_quotes = []
+    sleep_praise = []
+    exercise_praise = []
+
+    current_section = None
+    for line in lines:
+        if line.startswith("## Про сон"):
+            current_section = "sleep"
+        elif line.startswith("## Про бокс"):
+            current_section = "exercise"
+        elif line.startswith("## Похвала за сон"):
+            current_section = "sleep_praise"
+        elif line.startswith("## Похвала за бокс") or line.startswith("## Похвала за тренировку"):
+            current_section = "exercise_praise"
+        elif line.startswith("## "):
+            current_section = None
+        elif line.startswith("> ") and current_section:
+            quote = line[2:].strip()
+            if current_section == "sleep":
+                sleep_quotes.append(quote)
+            elif current_section == "exercise":
+                exercise_quotes.append(quote)
+            elif current_section == "sleep_praise":
+                sleep_praise.append(quote)
+            elif current_section == "exercise_praise":
+                exercise_praise.append(quote)
+
+    result = []
+
+    # Pick based on data
+    if sleep_hours < 7 and sleep_quotes:
+        result.extend(random.sample(sleep_quotes, min(2, len(sleep_quotes))))
+    elif sleep_hours >= 7 and sleep_praise:
+        result.append(random.choice(sleep_praise))
+
+    if strain < 5 and exercise_quotes:
+        result.extend(random.sample(exercise_quotes, min(2, len(exercise_quotes))))
+    elif strain >= 5 and exercise_praise:
+        result.append(random.choice(exercise_praise))
+
+    return "\n\n".join(result) if result else ""
+
 def get_github_file(filepath: str) -> str:
     """Получить файл из GitHub."""
     if not GITHUB_TOKEN:
@@ -2436,27 +2488,21 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         sleep_ok = sleep_hours >= 7
         boxed = strain >= 5
 
-        # Load motivations
-        motivations = get_motivations()
+        # Get relevant motivations (2-3 quotes based on data)
+        motivations = get_motivations_for_whoop(sleep_hours, strain)
 
-        prompt = f"""Вот данные WHOOP за сегодня:
+        prompt = f"""Данные WHOOP:
 {data_str}
 
-Сон: {sleep_hours} часов {"(достаточно)" if sleep_ok else "(МАЛО, нужно минимум 7)"}
-Тренировка вчера: {"да (strain >= 5)" if boxed else f"НЕТ (strain {strain}, нужно >= 5)"}
+Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human.
 
-Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human body.
-
-## МОТИВАЦИИ (используй эти фразы близко к оригиналу):
+ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные выше):
 {motivations}
 
-ВАЖНО: Выбери 1-2 фразы из мотиваций выше и адаптируй под текущие данные. Подставь реальные числа вместо плейсхолдеров. Не придумывай новые — используй готовые.
-
-Если сон < 7 часов — бери фразы из "Про сон".
-Если strain < 5 — бери фразы из "Про бокс и движение" или "Про силовые".
-Если всё хорошо — бери фразы из "Похвала за сон" или "Похвала за бокс".
-
-Без эмодзи. На русском. 3-5 предложений."""
+Инструкции:
+- Возьми фразы выше и подставь реальные числа из данных
+- Сохрани стиль и формулировки оригинала
+- Без эмодзи. На русском. 3-5 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
         await context.bot.send_message(chat_id=chat_id, text=text)
