@@ -236,6 +236,24 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "heebie7/geek-bot")
 WRITING_REPO = os.getenv("WRITING_REPO", "heebie7/Writing-space")  # Для задач и заметок
 
+# Cache for motivations (loaded once)
+_motivations_cache = None
+
+def get_motivations() -> str:
+    """Get motivations from Writing repo context/motivations.md. Cached."""
+    global _motivations_cache
+    if _motivations_cache is not None:
+        return _motivations_cache
+
+    content = get_writing_file("context/motivations.md")
+    if content:
+        _motivations_cache = content
+        logger.info("Loaded motivations from Writing repo")
+    else:
+        _motivations_cache = ""
+        logger.warning("Failed to load motivations")
+    return _motivations_cache
+
 def get_github_file(filepath: str) -> str:
     """Получить файл из GitHub."""
     if not GITHUB_TOKEN:
@@ -2418,6 +2436,9 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         sleep_ok = sleep_hours >= 7
         boxed = strain >= 5
 
+        # Load motivations
+        motivations = get_motivations()
+
         prompt = f"""Вот данные WHOOP за сегодня:
 {data_str}
 
@@ -2426,11 +2447,14 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human body.
 
-ВАЖНО: Используй мотивации из контекста МАКСИМАЛЬНО БЛИЗКО К ОРИГИНАЛУ. Не пересказывай своими словами — бери готовые фразы и адаптируй только данные (числа, проценты). Стиль и формулировки должны остаться как в примерах.
+## МОТИВАЦИИ (используй эти фразы близко к оригиналу):
+{motivations}
 
-Если сон < 7 часов — мотивируй спать (my SecUnit, префронтальная кора, клиенты, degraded hardware).
-Если strain < 5 — мотивируй тренироваться (бокс или силовые с гирями/резинками, my SecUnit, дофамин, СДВГ).
-Если всё хорошо — коротко похвали в стиле ART (не сентиментально, "я не волновался, просто констатирую").
+ВАЖНО: Выбери 1-2 фразы из мотиваций выше и адаптируй под текущие данные. Подставь реальные числа вместо плейсхолдеров. Не придумывай новые — используй готовые.
+
+Если сон < 7 часов — бери фразы из "Про сон".
+Если strain < 5 — бери фразы из "Про бокс и движение" или "Про силовые".
+Если всё хорошо — бери фразы из "Похвала за сон" или "Похвала за бокс".
 
 Без эмодзи. На русском. 3-5 предложений."""
 
