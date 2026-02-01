@@ -1291,6 +1291,94 @@ def _get_priority_tasks() -> str:
     return "\n\n".join(parts) if parts else "Нет задач с приоритетами."
 
 
+def _parse_sensory_menu() -> dict:
+    """Parse sensory menu from tasks.md.
+    Returns dict with keys: emergency (🔴), unfreeze (🟡), inputs (🟢), creativity, media, connection
+    """
+    content = get_life_tasks()
+    if not content:
+        return {}
+
+    menu = {
+        "emergency": [],  # 🔴 Экстренное (down-regulation)
+        "unfreeze": [],   # 🟡 Разморозка (up-regulation)
+        "inputs": [],     # 🟢 Профилактика
+        "creativity": [],
+        "media": [],
+        "connection": []
+    }
+
+    lines = content.split("\n")
+    current_section = None
+    in_sensory_menu = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect Sensory Menu section
+        if stripped == "### Sensory Menu":
+            in_sensory_menu = True
+            continue
+
+        # Detect subsections
+        if stripped.startswith("#### 🔴"):
+            current_section = "emergency"
+            continue
+        elif stripped.startswith("#### 🟡"):
+            current_section = "unfreeze"
+            continue
+        elif stripped.startswith("#### 🟢"):
+            current_section = "inputs"
+            continue
+        elif stripped == "### Creativity":
+            in_sensory_menu = False
+            current_section = "creativity"
+            continue
+        elif stripped == "### Media":
+            current_section = "media"
+            continue
+        elif stripped == "### Connection":
+            current_section = "connection"
+            continue
+        elif stripped.startswith("## ") or stripped.startswith("### ") and not in_sensory_menu:
+            current_section = None
+            continue
+
+        # Parse items (both task format and simple list)
+        if current_section and stripped.startswith("- "):
+            item = stripped[2:]
+            # Remove task checkbox if present
+            if item.startswith("[ ] "):
+                item = item[4:]
+            elif item.startswith("[x] "):
+                continue  # Skip completed
+            # Clean up item
+            item = item.strip()
+            if item and not item.startswith("*"):  # Skip dreams/notes in italics
+                menu[current_section].append(item)
+
+    return menu
+
+
+def _get_random_sensory_suggestion() -> str:
+    """Get a random suggestion from sensory menu for daily todo."""
+    import random
+    menu = _parse_sensory_menu()
+
+    # Combine all items with labels
+    all_items = []
+    for item in menu.get("inputs", []):
+        all_items.append(f"🟢 {item}")
+    for item in menu.get("creativity", []):
+        all_items.append(f"🎨 {item}")
+    for item in menu.get("connection", []):
+        all_items.append(f"💚 {item}")
+
+    if all_items:
+        return random.choice(all_items)
+    return ""
+
+
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /todo — обзор задач через Лею."""
     priority_tasks = _get_priority_tasks()
