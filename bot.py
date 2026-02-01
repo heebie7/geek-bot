@@ -399,14 +399,17 @@ def get_joy_stats_week() -> dict:
 def get_writing_file(filepath: str) -> str:
     """Получить файл из Writing-space репо."""
     if not GITHUB_TOKEN:
+        logger.warning("No GITHUB_TOKEN for Writing repo")
         return ""
     try:
+        logger.info(f"Reading {filepath} from {WRITING_REPO}")
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(WRITING_REPO)
         content = repo.get_contents(filepath)
+        logger.info(f"Successfully read {filepath} ({len(content.decoded_content)} bytes)")
         return content.decoded_content.decode('utf-8')
     except Exception as e:
-        logger.error(f"Writing repo read error: {e}")
+        logger.error(f"Writing repo read error for {filepath} from {WRITING_REPO}: {e}")
         return ""
 
 def save_writing_file(filepath: str, new_content: str, message: str) -> bool:
