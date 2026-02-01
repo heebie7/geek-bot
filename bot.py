@@ -366,15 +366,18 @@ def save_joy_log(log: list) -> bool:
     content = json.dumps(log, ensure_ascii=False, indent=2)
     return update_github_file("joy_log.json", content, "Update joy log")
 
-def log_joy(category: str) -> bool:
-    """Log a joy event with timestamp."""
+def log_joy(category: str, item: str = None) -> bool:
+    """Log a joy event with timestamp and optional specific item."""
     if category not in JOY_CATEGORIES:
         return False
     log = get_joy_log()
-    log.append({
+    entry = {
         "category": category,
         "timestamp": datetime.now(TZ).isoformat()
-    })
+    }
+    if item:
+        entry["item"] = item
+    log.append(entry)
     return save_joy_log(log)
 
 def get_joy_stats_week() -> dict:
@@ -968,18 +971,63 @@ def get_joy_keyboard():
     """Inline keyboard for joy category selection."""
     keyboard = [
         [
-            InlineKeyboardButton("🧘 Sensory", callback_data="joy_sensory"),
-            InlineKeyboardButton("🎨 Creativity", callback_data="joy_creativity"),
+            InlineKeyboardButton("🧘 Sensory", callback_data="joy_cat_sensory"),
+            InlineKeyboardButton("🎨 Creativity", callback_data="joy_cat_creativity"),
         ],
         [
-            InlineKeyboardButton("📺 Media", callback_data="joy_media"),
-            InlineKeyboardButton("💚 Connection", callback_data="joy_connection"),
+            InlineKeyboardButton("📺 Media", callback_data="joy_cat_media"),
+            InlineKeyboardButton("💚 Connection", callback_data="joy_cat_connection"),
         ],
         [
             InlineKeyboardButton("📊 Статистика", callback_data="joy_stats"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def get_joy_items_keyboard(category: str) -> InlineKeyboardMarkup:
+    """Inline keyboard with specific items for a joy category."""
+    menu = _parse_sensory_menu()
+    emoji = JOY_CATEGORY_EMOJI.get(category, "✨")
+
+    # Map joy categories to sensory menu keys
+    category_map = {
+        "sensory": ["inputs", "emergency", "unfreeze"],  # Combine all sensory
+        "creativity": ["creativity"],
+        "media": ["media"],
+        "connection": ["connection"]
+    }
+
+    items = []
+    for key in category_map.get(category, []):
+        items.extend(menu.get(key, []))
+
+    # Create buttons - max 2 per row, truncate long items
+    keyboard = []
+    row = []
+    for i, item in enumerate(items[:10]):  # Limit to 10 items
+        # Truncate item name for button (max ~25 chars)
+        short_item = item[:22] + "..." if len(item) > 25 else item
+        # callback_data max 64 bytes, use index
+        callback = f"joyitem_{category}_{i}"
+        row.append(InlineKeyboardButton(short_item, callback_data=callback))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+
+    # Add "Другое" button and back button
+    keyboard.append([
+        InlineKeyboardButton("✏️ Другое", callback_data=f"joyother_{category}"),
+        InlineKeyboardButton("◀️ Назад", callback_data="joy_back"),
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+# Cache for joy items (to retrieve by index in callbacks)
+_joy_items_cache = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1316,14 +1364,70 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
             await query.edit_message_text(msg, parse_mode="Markdown")
 
-        elif action in JOY_CATEGORIES:
-            # Log joy event
-            success = log_joy(action)
-            emoji = JOY_CATEGORY_EMOJI.get(action, "✨")
-            if success:
-                await query.edit_message_text(f"{emoji} **{action.capitalize()}** отмечено.\n\n_Хорошо._", parse_mode="Markdown")
-            else:
-                await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
+        elif action == "back":
+            # Return to main joy menu
+            await query.edit_message_text("Что было?", reply_markup=get_joy_keyboard())
+
+        elif action.startswith("cat_"):
+            # Category selected - show items
+            category = action.replace("cat_", "")
+            if category in JOY_CATEGORIES:
+                emoji = JOY_CATEGORY_EMOJI.get(category, "✨")
+                # Cache items for this category
+                menu = _parse_sensory_menu()
+                category_map = {
+                    "sensory": ["inputs", "emergency", "unfreeze"],
+                    "creativity": ["creativity"],
+                    "media": ["media"],
+                    "connection": ["connection"]
+                }
+                items = []
+                for key in category_map.get(category, []):
+                    items.extend(menu.get(key, []))
+                _joy_items_cache[category] = items
+
+                await query.edit_message_text(
+                    f"{emoji} **{category.capitalize()}**\n\nЧто именно?",
+                    reply_markup=get_joy_items_keyboard(category),
+                    parse_mode="Markdown"
+                )
+
+    elif data.startswith("joyitem_"):
+        # Specific item selected: joyitem_category_index
+        parts = data.split("_")
+        if len(parts) >= 3:
+            category = parts[1]
+            try:
+                idx = int(parts[2])
+                items = _joy_items_cache.get(category, [])
+                if idx < len(items):
+                    item = items[idx]
+                    success = log_joy(category, item)
+                    emoji = JOY_CATEGORY_EMOJI.get(category, "✨")
+                    if success:
+                        # Truncate item for display if too long
+                        display_item = item[:30] + "..." if len(item) > 33 else item
+                        await query.edit_message_text(
+                            f"{emoji} **{display_item}**\n\n_Записано._",
+                            parse_mode="Markdown"
+                        )
+                    else:
+                        await query.edit_message_text("Не удалось сохранить.")
+                else:
+                    await query.edit_message_text("Элемент не найден.")
+            except ValueError:
+                await query.edit_message_text("Ошибка.")
+
+    elif data.startswith("joyother_"):
+        # "Другое" selected - ask for free text input
+        category = data.replace("joyother_", "")
+        if category in JOY_CATEGORIES:
+            emoji = JOY_CATEGORY_EMOJI.get(category, "✨")
+            context.user_data["joy_pending_category"] = category
+            await query.edit_message_text(
+                f"{emoji} **{category.capitalize()}** — напиши что именно:",
+                parse_mode="Markdown"
+            )
 
     elif data.startswith("feeling_"):
         feeling = data.replace("feeling_", "")
@@ -2009,6 +2113,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             stats_msg += f"{emoji} {cat.capitalize()}: {count}x\n"
         stats_msg += f"\nВсего: {total} отметок\n\nЧто было сейчас?"
         await update.message.reply_text(stats_msg, reply_markup=get_joy_keyboard())
+        return
+
+    # Check for pending joy free text input
+    pending_joy_category = context.user_data.get("joy_pending_category")
+    if pending_joy_category:
+        # User is entering custom joy item
+        category = pending_joy_category
+        item = user_message.strip()
+        context.user_data.pop("joy_pending_category", None)  # Clear pending state
+
+        success = log_joy(category, item)
+        emoji = JOY_CATEGORY_EMOJI.get(category, "✨")
+
+        if success:
+            await update.message.reply_text(
+                f"{emoji} **{item}**\n\n_Записано._",
+                parse_mode="Markdown",
+                reply_markup=get_reply_keyboard()
+            )
+        else:
+            await update.message.reply_text(
+                "Не удалось сохранить.",
+                reply_markup=get_reply_keyboard()
+            )
         return
 
     # История диалога: последние 10 сообщений (5 пар user+assistant)
