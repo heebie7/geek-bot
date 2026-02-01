@@ -2089,9 +2089,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await next_steps_command(update, context)
         return
     elif user_message == "➕ Add":
+        context.user_data["add_mode"] = True
         await update.message.reply_text(
-            "Напиши задачу, которую хочешь добавить.\n"
-            "Например: `/add Позвонить врачу`",
+            "Напиши задачу или список задач (каждая с новой строки).\n"
+            "Отправлю в Драйв.",
             reply_markup=get_reply_keyboard()
         )
         return
@@ -2137,6 +2138,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "Не удалось сохранить.",
                 reply_markup=get_reply_keyboard()
             )
+        return
+
+    # Check for add_mode - adding tasks from button
+    if context.user_data.get("add_mode"):
+        context.user_data.pop("add_mode", None)  # Clear mode
+
+        # Parse input - could be single task or list
+        lines = [line.strip() for line in user_message.strip().split("\n") if line.strip()]
+
+        # Clean up lines - remove bullet points, numbers, etc.
+        tasks = []
+        for line in lines:
+            # Remove common prefixes: "- ", "* ", "1. ", "1) ", etc.
+            task = line.lstrip("-*•").strip()
+            if task and task[0].isdigit():
+                # Remove "1. " or "1) " prefix
+                task = task.lstrip("0123456789").lstrip(".)").strip()
+            if task:
+                tasks.append(task)
+
+        if not tasks:
+            await update.message.reply_text(
+                "Не нашёл задач. Попробуй ещё раз.",
+                reply_markup=get_reply_keyboard()
+            )
+            return
+
+        # Add all tasks to Драйв
+        added = []
+        failed = []
+        for task in tasks:
+            if add_task_to_zone(task, "драйв"):
+                added.append(task)
+            else:
+                failed.append(task)
+
+        # Report results
+        if added:
+            if len(added) == 1:
+                msg = f"Добавлено в Драйв:\n• {added[0]}"
+            else:
+                msg = f"Добавлено в Драйв ({len(added)}):\n" + "\n".join(f"• {t}" for t in added)
+        else:
+            msg = "Не удалось добавить задачи."
+
+        if failed:
+            msg += f"\n\nНе удалось добавить:\n" + "\n".join(f"• {t}" for t in failed)
+
+        await update.message.reply_text(msg, reply_markup=get_reply_keyboard())
         return
 
     # История диалога: последние 10 сообщений (5 пар user+assistant)
