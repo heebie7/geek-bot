@@ -1576,11 +1576,22 @@ def _get_random_sensory_suggestion() -> str:
 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /todo — обзор задач через Лею."""
+    """Команда /todo — обзор задач через Лею + случайная идея из кайфа."""
     priority_tasks = _get_priority_tasks()
     calendar = get_week_events()
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
     whoop = _get_whoop_context()
+
+    # Get Joy stats for context
+    joy_stats = get_joy_stats_week()
+    joy_total = sum(joy_stats.values())
+    sensory_count = joy_stats.get("sensory", 0)
+
+    joy_context = ""
+    if joy_total < 3:
+        joy_context = "\n⚠️ Joy за неделю: меньше 3 отметок. Сенсорная диета страдает."
+    if sensory_count == 0:
+        joy_context += "\n⚠️ Sensory = 0 за неделю."
 
     prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
 
@@ -1606,6 +1617,16 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 Будь краткой, но заботливой."""
 
     response = await get_llm_response(prompt, mode="leya", max_tokens=1500, skip_context=True)
+
+    # Add Joy warning if needed
+    if joy_context:
+        response += joy_context
+
+    # Add random sensory suggestion
+    sensory_suggestion = _get_random_sensory_suggestion()
+    if sensory_suggestion:
+        response += f"\n\n💡 Идея на сегодня: {sensory_suggestion}"
+
     await update.message.reply_text(response)
 
 
