@@ -808,9 +808,23 @@ def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
         [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Шаги")],
-        [KeyboardButton("📅 Неделя"), KeyboardButton("➕ Add")],
+        [KeyboardButton("📅 Неделя"), KeyboardButton("🧘 Sensory"), KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def get_sensory_keyboard():
+    """Inline keyboard for sensory state selection."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🔴 Хочу орать", callback_data="sensory_emergency"),
+            InlineKeyboardButton("🟡 Залипла", callback_data="sensory_unfreeze"),
+        ],
+        [
+            InlineKeyboardButton("🟢 Inputs", callback_data="sensory_inputs"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1079,6 +1093,51 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"Задача: {pending['content']}\nЗона: {zone}\n\nВыбери приоритет:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
+    elif data.startswith("sensory_"):
+        state = data.replace("sensory_", "")
+        menu = _parse_sensory_menu()
+
+        if state == "emergency":
+            # 🔴 Хочу орать — down-regulation
+            items = menu.get("emergency", [])
+            if items:
+                response = "🔴 **Экстренное** (down-regulation):\n\n"
+                response += "\n".join(f"• {item}" for item in items)
+                response += "\n\n_Deep pressure работает за минуты. Попроси Наташу надавить на спину или толкай стену._"
+            else:
+                response = "Сенсорное меню пустое. Попробуй deep pressure — толкай стену или попроси надавить на спину."
+
+        elif state == "unfreeze":
+            # 🟡 Залипла — up-regulation
+            items = menu.get("unfreeze", [])
+            if items:
+                response = "🟡 **Разморозка** (up-regulation):\n\n"
+                response += "\n".join(f"• {item}" for item in items)
+                response += "\n\n_Кислород в мозг. Бокс работает и для вверх, и для вниз._"
+            else:
+                response = "Сенсорное меню пустое. Попробуй бокс или приседания — тело разбудит мозг."
+
+        elif state == "inputs":
+            # 🟢 Inputs — профилактика
+            items = menu.get("inputs", [])
+            if items:
+                response = "🟢 **Sensory inputs** (профилактика):\n\n"
+                response += "\n".join(f"• {item}" for item in items)
+                # Add other categories
+                creativity = menu.get("creativity", [])
+                media = menu.get("media", [])
+                connection = menu.get("connection", [])
+                if creativity:
+                    response += "\n\n🎨 **Creativity:**\n" + "\n".join(f"• {item}" for item in creativity)
+                if media:
+                    response += "\n\n📺 **Media:**\n" + "\n".join(f"• {item}" for item in media)
+                if connection:
+                    response += "\n\n💚 **Connection:**\n" + "\n".join(f"• {item}" for item in connection)
+            else:
+                response = "Сенсорное меню пустое."
+
+        await query.edit_message_text(response, parse_mode="Markdown")
 
     elif data.startswith("proj_"):
         proj_idx = int(data.replace("proj_", ""))
@@ -1694,6 +1753,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "Напиши задачу, которую хочешь добавить.\n"
             "Например: `/add Позвонить врачу`",
             reply_markup=get_reply_keyboard()
+        )
+        return
+    elif user_message == "🧘 Sensory":
+        await update.message.reply_text(
+            "Что сейчас происходит?",
+            reply_markup=get_sensory_keyboard()
         )
         return
 
