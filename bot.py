@@ -808,7 +808,7 @@ def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
         [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Шаги")],
-        [KeyboardButton("📅 Неделя"), KeyboardButton("🤖 Geek"), KeyboardButton("🧭 Лея")],
+        [KeyboardButton("📅 Неделя"), KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -1601,11 +1601,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif user_message == "🎯 Шаги":
         await next_steps_command(update, context)
         return
-    elif user_message == "🤖 Geek":
-        await switch_to_geek(update, context)
-        return
-    elif user_message == "🧭 Лея":
-        await switch_to_leya(update, context)
+    elif user_message == "➕ Add":
+        await update.message.reply_text(
+            "Напиши задачу, которую хочешь добавить.\n"
+            "Например: `/add Позвонить врачу`",
+            reply_markup=get_reply_keyboard()
+        )
         return
 
     # История диалога: последние 10 сообщений (5 пар user+assistant)
