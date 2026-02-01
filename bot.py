@@ -702,7 +702,7 @@ REMINDERS = {
 
 # === LLM API ===
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False) -> str:
@@ -753,7 +753,10 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                     max_output_tokens=max_tokens,
                 ),
             )
-            return response.text
+            if response.text:
+                return response.text
+            else:
+                logger.warning(f"Gemini returned empty response, falling back to OpenAI")
         except Exception as e:
             logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
 
