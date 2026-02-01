@@ -493,6 +493,74 @@ def add_task_to_zone(task: str, zone: str) -> bool:
 
     return save_writing_file("life/tasks.md", tasks, f"Add task: {task[:30]}")
 
+
+# Zone emojis for task adding
+ZONE_EMOJI = {
+    "фундамент": "🏠",
+    "драйв": "🚀",
+    "кайф": "✨",
+    "партнёрство": "💑",
+    "дети": "👶",
+    "финансы": "💰"
+}
+
+
+async def suggest_zone_for_task(task: str) -> str:
+    """Use LLM to suggest which zone a task belongs to."""
+    prompt = f"""Определи, в какую зону относится задача. Зоны:
+- фундамент: базовые потребности (сон, еда, здоровье, гигиена, уборка)
+- драйв: работа, проекты, развитие, обучение
+- кайф: удовольствие, хобби, отдых, развлечения
+- партнёрство: отношения с партнёром
+- дети: всё связанное с детьми
+- финансы: деньги, счета, покупки
+
+Задача: {task}
+
+Ответь ТОЛЬКО одним словом — названием зоны (фундамент/драйв/кайф/партнёрство/дети/финансы)."""
+
+    try:
+        response = await get_llm_response(prompt, mode="geek", history=[])
+        zone = response.strip().lower()
+        # Validate zone
+        if zone in ZONE_EMOJI:
+            return zone
+        # Try to extract zone from response
+        for z in ZONE_EMOJI.keys():
+            if z in zone:
+                return z
+        return "драйв"  # Default
+    except:
+        return "драйв"
+
+
+def get_task_confirm_keyboard(task_index: int, suggested_zone: str) -> InlineKeyboardMarkup:
+    """Keyboard for confirming task zone."""
+    # First row: confirm suggested zone
+    emoji = ZONE_EMOJI.get(suggested_zone, "📋")
+    keyboard = [
+        [InlineKeyboardButton(f"✅ {emoji} {suggested_zone.capitalize()}", callback_data=f"taskzone_{task_index}_{suggested_zone}")],
+    ]
+
+    # Second row: alternative zones (excluding suggested)
+    other_zones = [z for z in ZONE_EMOJI.keys() if z != suggested_zone]
+    row = []
+    for zone in other_zones[:3]:  # First 3
+        emoji = ZONE_EMOJI[zone]
+        row.append(InlineKeyboardButton(f"{emoji}", callback_data=f"taskzone_{task_index}_{zone}"))
+    keyboard.append(row)
+
+    # Third row: remaining zones + skip
+    row = []
+    for zone in other_zones[3:]:  # Remaining
+        emoji = ZONE_EMOJI[zone]
+        row.append(InlineKeyboardButton(f"{emoji}", callback_data=f"taskzone_{task_index}_{zone}"))
+    row.append(InlineKeyboardButton("⏭ Пропустить", callback_data=f"taskzone_{task_index}_skip"))
+    keyboard.append(row)
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 def create_rawnote(title: str, content: str) -> bool:
     """Создать заметку в rawnotes/."""
     today = datetime.now(TZ).strftime("%Y-%m-%d")
@@ -1429,6 +1497,60 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 parse_mode="Markdown"
             )
 
+    elif data.startswith("taskzone_"):
+        # Handle task zone confirmation: taskzone_0_драйв or taskzone_0_skip
+        parts = data.split("_")
+        if len(parts) >= 3:
+            task_idx = int(parts[1])
+            zone = "_".join(parts[2:])  # In case zone has underscore
+
+            pending_tasks = context.user_data.get("pending_tasks", [])
+            added_tasks = context.user_data.get("pending_tasks_added", [])
+
+            if task_idx < len(pending_tasks):
+                task = pending_tasks[task_idx]
+
+                if zone == "skip":
+                    # Skip this task
+                    await query.edit_message_text(f"⏭ Пропущено: {task}")
+                else:
+                    # Add task to zone
+                    if add_task_to_zone(task, zone):
+                        emoji = ZONE_EMOJI.get(zone, "📋")
+                        added_tasks.append(f"{emoji} {task}")
+                        context.user_data["pending_tasks_added"] = added_tasks
+                        await query.edit_message_text(f"✅ {emoji} {task} → {zone.capitalize()}")
+                    else:
+                        await query.edit_message_text(f"❌ Не удалось добавить: {task}")
+
+                # Process next task
+                next_idx = task_idx + 1
+                if next_idx < len(pending_tasks):
+                    next_task = pending_tasks[next_idx]
+                    suggested_zone = await suggest_zone_for_task(next_task)
+                    emoji = ZONE_EMOJI.get(suggested_zone, "📋")
+
+                    remaining = len(pending_tasks) - next_idx - 1
+                    remaining_text = f"\n\n_Осталось: {remaining}_" if remaining > 0 else ""
+
+                    await query.message.reply_text(
+                        f"**Задача:** {next_task}\n\n"
+                        f"Предлагаю: {emoji} **{suggested_zone.capitalize()}**{remaining_text}",
+                        reply_markup=get_task_confirm_keyboard(next_idx, suggested_zone),
+                        parse_mode="Markdown"
+                    )
+                else:
+                    # All tasks processed
+                    context.user_data.pop("pending_tasks", None)
+                    added = context.user_data.pop("pending_tasks_added", [])
+
+                    if added:
+                        msg = f"**Добавлено ({len(added)}):**\n" + "\n".join(f"• {t}" for t in added)
+                    else:
+                        msg = "Ни одной задачи не добавлено."
+
+                    await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_reply_keyboard())
+
     elif data.startswith("feeling_"):
         feeling = data.replace("feeling_", "")
         joy_stats = get_joy_stats_week()
@@ -2165,28 +2287,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        # Add all tasks to Драйв
-        added = []
-        failed = []
-        for task in tasks:
-            if add_task_to_zone(task, "драйв"):
-                added.append(task)
-            else:
-                failed.append(task)
+        # Store tasks for sequential processing
+        context.user_data["pending_tasks"] = tasks
+        context.user_data["pending_tasks_added"] = []
 
-        # Report results
-        if added:
-            if len(added) == 1:
-                msg = f"Добавлено в Драйв:\n• {added[0]}"
-            else:
-                msg = f"Добавлено в Драйв ({len(added)}):\n" + "\n".join(f"• {t}" for t in added)
-        else:
-            msg = "Не удалось добавить задачи."
+        # Process first task
+        task = tasks[0]
+        await update.message.reply_text(f"Анализирую {len(tasks)} задач...")
 
-        if failed:
-            msg += f"\n\nНе удалось добавить:\n" + "\n".join(f"• {t}" for t in failed)
+        suggested_zone = await suggest_zone_for_task(task)
+        emoji = ZONE_EMOJI.get(suggested_zone, "📋")
 
-        await update.message.reply_text(msg, reply_markup=get_reply_keyboard())
+        remaining = len(tasks) - 1
+        remaining_text = f"\n\n_Осталось: {remaining}_" if remaining > 0 else ""
+
+        await update.message.reply_text(
+            f"**Задача:** {task}\n\n"
+            f"Предлагаю: {emoji} **{suggested_zone.capitalize()}**{remaining_text}",
+            reply_markup=get_task_confirm_keyboard(0, suggested_zone),
+            parse_mode="Markdown"
+        )
         return
 
     # История диалога: последние 20 сообщений (10 пар user+assistant)
