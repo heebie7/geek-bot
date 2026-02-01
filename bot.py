@@ -265,6 +265,64 @@ def update_github_file(filepath: str, new_content: str, message: str) -> bool:
         logger.error(f"GitHub write error: {e}")
         return False
 
+# === JOY TRACKING ===
+# Joy log stored in geek-bot repo as joy_log.json
+
+JOY_CATEGORIES = ["sensory", "creativity", "media", "connection"]
+JOY_CATEGORY_EMOJI = {
+    "sensory": "🧘",
+    "creativity": "🎨",
+    "media": "📺",
+    "connection": "💚"
+}
+
+def get_joy_log() -> list:
+    """Get joy log from GitHub."""
+    content = get_github_file("joy_log.json")
+    if not content or content == "Файл не найден.":
+        return []
+    try:
+        return json.loads(content)
+    except:
+        return []
+
+def save_joy_log(log: list) -> bool:
+    """Save joy log to GitHub."""
+    content = json.dumps(log, ensure_ascii=False, indent=2)
+    return update_github_file("joy_log.json", content, "Update joy log")
+
+def log_joy(category: str) -> bool:
+    """Log a joy event with timestamp."""
+    if category not in JOY_CATEGORIES:
+        return False
+    log = get_joy_log()
+    log.append({
+        "category": category,
+        "timestamp": datetime.now(TZ).isoformat()
+    })
+    return save_joy_log(log)
+
+def get_joy_stats_week() -> dict:
+    """Get joy statistics for the last 7 days."""
+    log = get_joy_log()
+    now = datetime.now(TZ)
+    week_ago = now - timedelta(days=7)
+
+    stats = {cat: 0 for cat in JOY_CATEGORIES}
+    for entry in log:
+        try:
+            ts = datetime.fromisoformat(entry["timestamp"])
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=TZ)
+            if ts >= week_ago:
+                cat = entry.get("category")
+                if cat in stats:
+                    stats[cat] += 1
+        except:
+            continue
+    return stats
+
+
 # === WRITING WORKSPACE (для идей/задач/заметок) ===
 # Все задачи хранятся в Writing-space репо: life/tasks.md
 
@@ -808,7 +866,8 @@ def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
         [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Шаги")],
-        [KeyboardButton("📅 Неделя"), KeyboardButton("🧘 Sensory"), KeyboardButton("➕ Add")],
+        [KeyboardButton("📅 Неделя"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
+        [KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -822,6 +881,24 @@ def get_sensory_keyboard():
         ],
         [
             InlineKeyboardButton("🟢 Inputs", callback_data="sensory_inputs"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_joy_keyboard():
+    """Inline keyboard for joy category selection."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🧘 Sensory", callback_data="joy_sensory"),
+            InlineKeyboardButton("🎨 Creativity", callback_data="joy_creativity"),
+        ],
+        [
+            InlineKeyboardButton("📺 Media", callback_data="joy_media"),
+            InlineKeyboardButton("💚 Connection", callback_data="joy_connection"),
+        ],
+        [
+            InlineKeyboardButton("📊 Статистика", callback_data="joy_stats"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -1138,6 +1215,37 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 response = "Сенсорное меню пустое."
 
         await query.edit_message_text(response, parse_mode="Markdown")
+
+    elif data.startswith("joy_"):
+        action = data.replace("joy_", "")
+
+        if action == "stats":
+            # Show detailed weekly stats
+            stats = get_joy_stats_week()
+            total = sum(stats.values())
+            msg = "📊 **Joy за последние 7 дней:**\n\n"
+            for cat in JOY_CATEGORIES:
+                emoji = JOY_CATEGORY_EMOJI.get(cat, "")
+                count = stats.get(cat, 0)
+                bar = "█" * count + "░" * (7 - count) if count <= 7 else "█" * 7 + f"+{count-7}"
+                msg += f"{emoji} {cat.capitalize()}: {bar} ({count}x)\n"
+            msg += f"\n**Всего:** {total} отметок"
+
+            if total == 0:
+                msg += "\n\n_Ни одной отметки за неделю. Сенсорная диета — это maintenance, не опция._"
+            elif total < 7:
+                msg += "\n\n_Меньше раза в день. Можно лучше._"
+
+            await query.edit_message_text(msg, parse_mode="Markdown")
+
+        elif action in JOY_CATEGORIES:
+            # Log joy event
+            success = log_joy(action)
+            emoji = JOY_CATEGORY_EMOJI.get(action, "✨")
+            if success:
+                await query.edit_message_text(f"{emoji} **{action.capitalize()}** отмечено.\n\n_Хорошо._", parse_mode="Markdown")
+            else:
+                await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
 
     elif data.startswith("proj_"):
         proj_idx = int(data.replace("proj_", ""))
@@ -1760,6 +1868,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "Что сейчас происходит?",
             reply_markup=get_sensory_keyboard()
         )
+        return
+    elif user_message == "✨ Joy":
+        # Show weekly stats and category selection
+        stats = get_joy_stats_week()
+        stats_msg = "📊 За последние 7 дней:\n"
+        total = 0
+        for cat in JOY_CATEGORIES:
+            emoji = JOY_CATEGORY_EMOJI.get(cat, "")
+            count = stats.get(cat, 0)
+            total += count
+            stats_msg += f"{emoji} {cat.capitalize()}: {count}x\n"
+        stats_msg += f"\nВсего: {total} отметок\n\nЧто было сейчас?"
+        await update.message.reply_text(stats_msg, reply_markup=get_joy_keyboard())
         return
 
     # История диалога: последние 10 сообщений (5 пар user+assistant)
