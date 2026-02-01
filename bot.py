@@ -320,16 +320,21 @@ def get_github_file(filepath: str) -> str:
         return load_file(os.path.join(BASE_DIR, filepath), "Файл не найден.")
 
 def update_github_file(filepath: str, new_content: str, message: str) -> bool:
-    """Обновить файл в GitHub."""
+    """Обновить или создать файл в GitHub."""
     if not GITHUB_TOKEN:
         logger.warning("No GitHub token, cannot update file")
         return False
     try:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(GITHUB_REPO)
-        content = repo.get_contents(filepath)
-        repo.update_file(filepath, message, new_content, content.sha)
-        logger.info(f"Updated {filepath} in GitHub")
+        try:
+            content = repo.get_contents(filepath)
+            repo.update_file(filepath, message, new_content, content.sha)
+            logger.info(f"Updated {filepath} in GitHub")
+        except:
+            # File doesn't exist — create it
+            repo.create_file(filepath, message, new_content)
+            logger.info(f"Created {filepath} in GitHub")
         return True
     except Exception as e:
         logger.error(f"GitHub write error: {e}")
