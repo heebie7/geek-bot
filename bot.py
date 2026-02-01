@@ -946,8 +946,8 @@ def get_main_keyboard(mode: str = "geek"):
 def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
-        [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Шаги")],
-        [KeyboardButton("📅 Неделя"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
+        [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Steps")],
+        [KeyboardButton("📅 Week"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
         [KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -2082,10 +2082,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif user_message == "📋 Todo":
         await todo_command(update, context)
         return
-    elif user_message == "📅 Неделя":
+    elif user_message == "📅 Week":
         await week_command(update, context)
         return
-    elif user_message == "🎯 Шаги":
+    elif user_message == "🎯 Steps":
         await next_steps_command(update, context)
         return
     elif user_message == "➕ Add":
@@ -2189,7 +2189,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(msg, reply_markup=get_reply_keyboard())
         return
 
-    # История диалога: последние 10 сообщений (5 пар user+assistant)
+    # История диалога: последние 20 сообщений (10 пар user+assistant)
     history = context.user_data.get("history", [])
 
     # Check if it's late night (after 01:00 Tbilisi)
@@ -2217,8 +2217,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Сохраняем в историю (чистый ответ без SAVE-тегов)
     history.append({"role": "user", "content": user_message})
     history.append({"role": "assistant", "content": clean_response or response})
-    # Храним только последние 10 сообщений
-    context.user_data["history"] = history[-10:]
+    # Храним только последние 20 сообщений
+    context.user_data["history"] = history[-20:]
 
     if save_type:
         # Сохраняем данные для кнопок
