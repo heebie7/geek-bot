@@ -934,7 +934,17 @@ def get_calendar_service():
     return build('calendar', 'v3', credentials=creds)
 
 def get_week_events() -> str:
-    """Получить события на неделю."""
+    """Получить события на неделю, сгруппированные по дням с маркерами Сегодня/Завтра."""
+    WEEKDAYS_RU = {
+        0: "понедельник", 1: "вторник", 2: "среда",
+        3: "четверг", 4: "пятница", 5: "суббота", 6: "воскресенье"
+    }
+    MONTHS_RU = {
+        1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+        5: "мая", 6: "июня", 7: "июля", 8: "августа",
+        9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+    }
+
     try:
         service = get_calendar_service()
         if not service:
@@ -956,32 +966,49 @@ def get_week_events() -> str:
         if not events:
             return "На этой неделе нет событий в календаре."
 
-        # Группируем по дням
+        today = datetime.now(TZ).date()
+        tomorrow = today + timedelta(days=1)
+
+        # Группируем по дням (ключ — date object для корректной сортировки)
         days = {}
         for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            # Парсим дату
-            if 'T' in start:
-                dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
-                day_key = dt.astimezone(TZ).strftime('%Y-%m-%d (%A)')
-                time_str = dt.astimezone(TZ).strftime('%H:%M')
+            start_raw = event['start'].get('dateTime', event['start'].get('date'))
+
+            if 'T' in start_raw:
+                # Timed event — конвертируем в локальное время
+                dt = datetime.fromisoformat(start_raw.replace('Z', '+00:00'))
+                local_dt = dt.astimezone(TZ)
+                day_date = local_dt.date()
+                time_str = local_dt.strftime('%H:%M')
             else:
-                day_key = start + " (весь день)"
+                # All-day event — дата как есть, без конвертации
+                day_date = datetime.strptime(start_raw, '%Y-%m-%d').date()
                 time_str = ""
 
-            if day_key not in days:
-                days[day_key] = []
+            if day_date not in days:
+                days[day_date] = []
 
             summary = event.get('summary', 'Без названия')
             if time_str:
-                days[day_key].append(f"  {time_str} — {summary}")
+                days[day_date].append(f"  {time_str} — {summary}")
             else:
-                days[day_key].append(f"  {summary}")
+                days[day_date].append(f"  (весь день) {summary}")
 
-        # Формируем текст
+        # Формируем текст с маркерами
         result = []
-        for day, items in sorted(days.items()):
-            result.append(f"\n{day}:")
+        for day_date in sorted(days.keys()):
+            items = days[day_date]
+            weekday = WEEKDAYS_RU[day_date.weekday()]
+            date_str = f"{day_date.day} {MONTHS_RU[day_date.month]}"
+
+            if day_date == today:
+                header = f"СЕГОДНЯ, {date_str} ({weekday})"
+            elif day_date == tomorrow:
+                header = f"ЗАВТРА, {date_str} ({weekday})"
+            else:
+                header = f"{date_str} ({weekday})"
+
+            result.append(f"\n{header}:")
             result.extend(items)
 
         return "\n".join(result)
