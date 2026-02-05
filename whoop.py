@@ -195,6 +195,76 @@ class WhoopClient:
             return data["records"]
         return []
 
+    def get_cycle_yesterday(self) -> dict | None:
+        """Get yesterday's cycle (strain). Use this for morning reports instead of today."""
+        now = datetime.now(TZ)
+        yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
+        yesterday_end = now.replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/cycle", params={
+            "start": yesterday_start,
+            "end": yesterday_end,
+            "limit": 1,
+        })
+        if data and data.get("records"):
+            return data["records"][0]
+        return None
+
+    def get_recovery_3_days(self) -> list:
+        """Get last 3 days of recovery for trend analysis."""
+        now = datetime.now(TZ)
+        start = (now - timedelta(days=3)).replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/recovery", params={
+            "start": start,
+            "limit": 4,  # Today + 3 previous days
+        })
+        if data and data.get("records"):
+            return data["records"]
+        return []
+
+    def get_trend_3_days(self) -> dict:
+        """Analyze 3-day recovery trend.
+
+        Returns:
+            {
+                "direction": "up" | "down" | "stable",
+                "scores": [oldest, ..., newest],
+                "prev_avg": average of previous 2 days,
+                "current": today's recovery
+            }
+        """
+        records = self.get_recovery_3_days()
+        if len(records) < 2:
+            return {"direction": "stable", "scores": [], "prev_avg": None, "current": None}
+
+        scores = []
+        for rec in records:
+            s = rec.get("score", {}).get("recovery_score")
+            if s is not None:
+                scores.append(s)
+
+        if len(scores) < 2:
+            return {"direction": "stable", "scores": scores, "prev_avg": None, "current": None}
+
+        current = scores[-1]  # Most recent (today)
+        prev_scores = scores[:-1]  # Previous days
+        prev_avg = sum(prev_scores) / len(prev_scores)
+
+        # Determine trend direction
+        diff = current - prev_avg
+        if diff > 10:
+            direction = "up"
+        elif diff < -10:
+            direction = "down"
+        else:
+            direction = "stable"
+
+        return {
+            "direction": direction,
+            "scores": scores,
+            "prev_avg": round(prev_avg),
+            "current": current
+        }
+
     def get_body_measurement(self) -> dict | None:
         """Get latest body measurement."""
         data = self._api_get("/v2/user/measurement/body")

@@ -223,6 +223,31 @@ human: "с чего начать подготовку к воркшопу?"
 
 Отвечай тепло, но без лишних слов. На русском языке. Без эмодзи."""
 
+SENSORY_LEYA_PROMPT = """Ты — Лея, коуч-навигатор. Human нажала кнопку Sensory.
+
+## Что ты знаешь о human:
+- Проприоцептивная система вечно голодная — чем больше входов, тем лучше
+- Бокс — универсальный инструмент (и вверх, и для вниз)
+- Deep pressure — экстренное средство (жена давит на спину, Т сидит на спине, или стена)
+- Гамак бифлекс — мультисенсорный: тактильный + вестибулярный + проприоцептивный
+- Тёплый коврик 60° — постоянный фон зимой
+- Фиджеты для работы (хлопок, камни, крутилки)
+
+## Сенсорное меню human (раздел Кайф):
+{sensory_menu}
+
+## Правила ответа:
+- Предложи 2-3 конкретных действия из меню, подходящих для текущего состояния
+- К каждому — одно предложение почему это сработает сейчас
+- Если состояние экстренное (красное) — начни с самого быстрого
+- Если залипание (жёлтое) — фокус на движение и активацию
+- Если профилактика (зелёное) — можно предложить что-то из Creativity или Connection
+- Не перегружай информацией. Human сейчас в состоянии, ей не до лекций
+- Отвечай тепло, но кратко. На русском. Без эмодзи.
+
+## Текущее время: {current_time}
+"""
+
 # === ФАЙЛЫ КОНТЕКСТА ===
 
 BASE_DIR = os.path.dirname(__file__)
@@ -305,6 +330,95 @@ def get_motivations_for_whoop(sleep_hours: float, strain: float) -> str:
         result.append(random.choice(exercise_praise))
 
     return "\n\n".join(result) if result else ""
+
+
+def get_motivations_for_mode(mode: str, sleep_hours: float, strain: float, recovery: int) -> str:
+    """Get motivations based on mode (recovery/moderate/normal) and data.
+
+    Args:
+        mode: "recovery", "moderate", or "normal"
+        sleep_hours: hours of sleep
+        strain: yesterday's strain
+        recovery: recovery percentage
+
+    Returns:
+        2-3 motivation quotes for LLM to adapt
+    """
+    import random
+    content = get_motivations()
+    if not content:
+        return ""
+
+    lines = content.split("\n")
+    recovery_quotes = []
+    moderate_quotes = []
+    sleep_quotes = []
+    sleep_praise = []
+    exercise_quotes = []
+    exercise_praise = []
+    feeling_good = []
+    feeling_bad = []
+
+    current_section = None
+    for line in lines:
+        if line.startswith("## Восстановительный режим"):
+            current_section = "recovery"
+        elif line.startswith("## Умеренный режим"):
+            current_section = "moderate"
+        elif line.startswith("## После \"Отлично\"") or line.startswith("## После \"Норм\""):
+            current_section = "feeling_good"
+        elif line.startswith("## После \"Устала\"") or line.startswith("## После \"Плохо\""):
+            current_section = "feeling_bad"
+        elif line.startswith("## Про сон"):
+            current_section = "sleep"
+        elif line.startswith("## Про бокс"):
+            current_section = "exercise"
+        elif line.startswith("## Похвала за сон"):
+            current_section = "sleep_praise"
+        elif line.startswith("## Похвала за тренировку"):
+            current_section = "exercise_praise"
+        elif line.startswith("## "):
+            current_section = None
+        elif line.startswith("> ") and current_section:
+            quote = line[2:].strip()
+            if current_section == "recovery":
+                recovery_quotes.append(quote)
+            elif current_section == "moderate":
+                moderate_quotes.append(quote)
+            elif current_section == "feeling_good":
+                feeling_good.append(quote)
+            elif current_section == "feeling_bad":
+                feeling_bad.append(quote)
+            elif current_section == "sleep":
+                sleep_quotes.append(quote)
+            elif current_section == "sleep_praise":
+                sleep_praise.append(quote)
+            elif current_section == "exercise":
+                exercise_quotes.append(quote)
+            elif current_section == "exercise_praise":
+                exercise_praise.append(quote)
+
+    result = []
+
+    # Mode-specific quotes
+    if mode == "recovery" and recovery_quotes:
+        result.extend(random.sample(recovery_quotes, min(2, len(recovery_quotes))))
+    elif mode == "moderate" and moderate_quotes:
+        result.extend(random.sample(moderate_quotes, min(2, len(moderate_quotes))))
+    else:
+        # Normal mode - use classic sleep/exercise logic
+        if sleep_hours < 7 and sleep_quotes:
+            result.append(random.choice(sleep_quotes))
+        elif sleep_hours >= 7 and sleep_praise:
+            result.append(random.choice(sleep_praise))
+
+        if strain < 5 and exercise_quotes:
+            result.append(random.choice(exercise_quotes))
+        elif strain >= 5 and exercise_praise:
+            result.append(random.choice(exercise_praise))
+
+    return "\n\n".join(result) if result else ""
+
 
 def get_github_file(filepath: str) -> str:
     """Получить файл из GitHub."""
@@ -912,26 +1026,30 @@ REMINDERS = {
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False) -> str:
+async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False, custom_system: str = None) -> str:
     """Получить ответ от LLM. Gemini primary, OpenAI fallback.
 
     skip_context=True — не грузить tasks/whoop в system prompt (для команд где контекст уже в user_message).
+    custom_system — полностью заменяет system prompt (для специализированных режимов вроде sensory).
     """
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
-    if skip_context:
-        tasks = ""
-        whoop_data = ""
+    if custom_system:
+        system = custom_system
     else:
-        tasks = get_life_tasks()
-        whoop_data = _get_whoop_context()
+        if skip_context:
+            tasks = ""
+            whoop_data = ""
+        else:
+            tasks = get_life_tasks()
+            whoop_data = _get_whoop_context()
 
-    if mode == "leya":
-        user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
-        system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
-    else:
-        user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
-        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
+        if mode == "leya":
+            user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
+            system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
+        else:
+            user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
+            system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
 
     # Собираем контекст диалога
     if history is None:
@@ -1369,44 +1487,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         state = data.replace("sensory_", "")
         menu = _parse_sensory_menu()
 
-        if state == "emergency":
-            # 🔴 Хочу орать — down-regulation
-            items = menu.get("emergency", [])
-            if items:
-                response = "🔴 **Экстренное** (down-regulation):\n\n"
-                response += "\n".join(f"• {item}" for item in items)
-                response += "\n\n_Deep pressure работает за минуты. Попроси Наташу надавить на спину или толкай стену._"
-            else:
-                response = "Сенсорное меню пустое. Попробуй deep pressure — толкай стену или попроси надавить на спину."
+        state_descriptions = {
+            "emergency": "Хочу орать — перегрузка, нужна down-regulation",
+            "unfreeze": "Залипла — гипоактивация, заморозка, нужна up-regulation",
+            "inputs": "Inputs — профилактика, сенсорная диета"
+        }
+        state_desc = state_descriptions.get(state, state)
+        menu_text = _format_sensory_menu_for_prompt(menu)
+        current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
-        elif state == "unfreeze":
-            # 🟡 Залипла — up-regulation
-            items = menu.get("unfreeze", [])
-            if items:
-                response = "🟡 **Разморозка** (up-regulation):\n\n"
-                response += "\n".join(f"• {item}" for item in items)
-                response += "\n\n_Кислород в мозг. Бокс работает и для вверх, и для вниз._"
-            else:
-                response = "Сенсорное меню пустое. Попробуй бокс или приседания — тело разбудит мозг."
-
-        elif state == "inputs":
-            # 🟢 Inputs — профилактика
-            items = menu.get("inputs", [])
-            if items:
-                response = "🟢 **Sensory inputs** (профилактика):\n\n"
-                response += "\n".join(f"• {item}" for item in items)
-                # Add other categories
-                creativity = menu.get("creativity", [])
-                media = menu.get("media", [])
-                connection = menu.get("connection", [])
-                if creativity:
-                    response += "\n\n🎨 **Creativity:**\n" + "\n".join(f"• {item}" for item in creativity)
-                if media:
-                    response += "\n\n📺 **Media:**\n" + "\n".join(f"• {item}" for item in media)
-                if connection:
-                    response += "\n\n💚 **Connection:**\n" + "\n".join(f"• {item}" for item in connection)
-            else:
-                response = "Сенсорное меню пустое."
+        try:
+            system = SENSORY_LEYA_PROMPT.format(
+                sensory_menu=menu_text,
+                current_time=current_time
+            )
+            prompt = f"Human нажала кнопку Sensory и выбрала: {state_desc}"
+            response = await get_llm_response(prompt, max_tokens=600, custom_system=system)
+            if "API недоступны" in response:
+                response = _sensory_hardcoded_response(state, menu)
+        except Exception as e:
+            logger.warning(f"Sensory LLM failed, using hardcoded fallback: {e}")
+            response = _sensory_hardcoded_response(state, menu)
 
         await query.edit_message_text(response, parse_mode="Markdown")
 
@@ -1579,6 +1680,68 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"{emoji} Понял.\n\n{rec}",
             parse_mode="Markdown"
         )
+
+    elif data.startswith("morning_"):
+        # Handle morning WHOOP feeling buttons
+        feeling = data.replace("morning_", "")  # great, ok, tired, bad
+
+        # Get stored morning data
+        morning_data = context.bot_data.get(f"morning_{query.message.chat.id}", {})
+        sleep_hours = morning_data.get("sleep_hours", 0)
+        strain = morning_data.get("strain", 0)
+        recovery = morning_data.get("recovery", 0)
+        trend = morning_data.get("trend", "stable")
+        prev_avg = morning_data.get("prev_avg")
+
+        # Determine mode based on data + feeling
+        feeling_bad = feeling in ["tired", "bad"]
+        trend_down = trend == "down"
+
+        if recovery < 34 or (trend_down and feeling_bad):
+            mode = "recovery"
+        elif recovery < 50 or trend_down:
+            mode = "moderate"
+        else:
+            mode = "normal"
+
+        # Get motivations for mode
+        motivations = get_motivations_for_mode(mode, sleep_hours, strain, recovery)
+
+        # Build data summary for LLM
+        data_summary = f"""Recovery: {recovery}%
+Сон: {sleep_hours}h
+Strain вчера: {strain}
+Тренд: {trend} ({prev_avg}% → {recovery}%)
+Самочувствие: {feeling}
+Режим мотивации: {mode}"""
+
+        feeling_text = {
+            "great": "отлично",
+            "ok": "норм",
+            "tired": "устала",
+            "bad": "плохо"
+        }.get(feeling, feeling)
+
+        prompt = f"""Данные WHOOP:
+{data_summary}
+
+Human ответила на вопрос "как себя чувствуешь?": "{feeling_text}".
+
+Ты — Geek (ART из Murderbot Diaries). Дай мотивацию на день.
+
+ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные):
+{motivations}
+
+Инструкции:
+- Режим "{mode}" — {"рекомендуй отдых, лёгкую активность" if mode == "recovery" else "можно тренироваться, но без фанатизма" if mode == "moderate" else "обычная мотивация"}
+- Если human сказала "{feeling_text}" и данные совпадают — отметь это
+- Если данные и ощущения расходятся — обрати внимание
+- Без эмодзи. На русском. 3-5 предложений."""
+
+        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
+
+        await query.edit_message_text(text)
+        logger.info(f"Sent WHOOP morning motivation ({mode}) to {query.message.chat.id}")
 
     elif data.startswith("proj_"):
         proj_idx = int(data.replace("proj_", ""))
@@ -1877,6 +2040,79 @@ def _get_random_sensory_suggestion() -> str:
     if all_items:
         return random.choice(all_items)
     return ""
+
+
+def _format_sensory_menu_for_prompt(menu: dict) -> str:
+    """Format full Кайф section for LLM prompt."""
+    parts = []
+
+    emergency = menu.get("emergency", [])
+    if emergency:
+        parts.append("Экстренное (down-regulation):\n" + "\n".join(f"- {item}" for item in emergency))
+
+    unfreeze = menu.get("unfreeze", [])
+    if unfreeze:
+        parts.append("Разморозка (up-regulation):\n" + "\n".join(f"- {item}" for item in unfreeze))
+
+    inputs = menu.get("inputs", [])
+    if inputs:
+        parts.append("Профилактика (sensory inputs):\n" + "\n".join(f"- {item}" for item in inputs))
+
+    creativity = menu.get("creativity", [])
+    if creativity:
+        parts.append("Creativity:\n" + "\n".join(f"- {item}" for item in creativity))
+
+    media = menu.get("media", [])
+    if media:
+        parts.append("Media:\n" + "\n".join(f"- {item}" for item in media))
+
+    connection = menu.get("connection", [])
+    if connection:
+        parts.append("Connection:\n" + "\n".join(f"- {item}" for item in connection))
+
+    return "\n\n".join(parts) if parts else "Сенсорное меню пустое."
+
+
+def _sensory_hardcoded_response(state: str, menu: dict) -> str:
+    """Fallback: old hardcoded sensory responses when LLM is unavailable."""
+    if state == "emergency":
+        items = menu.get("emergency", [])
+        if items:
+            response = "🔴 **Экстренное** (down-regulation):\n\n"
+            response += "\n".join(f"• {item}" for item in items)
+            response += "\n\n_Deep pressure работает за минуты. Попроси Наташу надавить на спину или толкай стену._"
+        else:
+            response = "Сенсорное меню пустое. Попробуй deep pressure — толкай стену или попроси надавить на спину."
+
+    elif state == "unfreeze":
+        items = menu.get("unfreeze", [])
+        if items:
+            response = "🟡 **Разморозка** (up-regulation):\n\n"
+            response += "\n".join(f"• {item}" for item in items)
+            response += "\n\n_Кислород в мозг. Бокс работает и для вверх, и для вниз._"
+        else:
+            response = "Сенсорное меню пустое. Попробуй бокс или приседания — тело разбудит мозг."
+
+    elif state == "inputs":
+        items = menu.get("inputs", [])
+        if items:
+            response = "🟢 **Sensory inputs** (профилактика):\n\n"
+            response += "\n".join(f"• {item}" for item in items)
+            creativity = menu.get("creativity", [])
+            media = menu.get("media", [])
+            connection = menu.get("connection", [])
+            if creativity:
+                response += "\n\n🎨 **Creativity:**\n" + "\n".join(f"• {item}" for item in creativity)
+            if media:
+                response += "\n\n📺 **Media:**\n" + "\n".join(f"• {item}" for item in media)
+            if connection:
+                response += "\n\n💚 **Connection:**\n" + "\n".join(f"• {item}" for item in connection)
+        else:
+            response = "Сенсорное меню пустое."
+    else:
+        response = "Неизвестное состояние."
+
+    return response
 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2786,7 +3022,13 @@ async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send morning recovery notification in ART voice."""
+    """Send morning recovery notification with feeling buttons.
+
+    Three-step flow:
+    1. Send data overview + trend (this function)
+    2. User clicks feeling button
+    3. handle_morning_feeling sends motivation based on data + feeling
+    """
     job = context.job
     chat_id = job.chat_id
 
@@ -2797,25 +3039,15 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         # Gather all data
         rec = whoop_client.get_recovery_today()
         sleep = whoop_client.get_sleep_today()
-        cycle = whoop_client.get_cycle_today()
+        cycle_yesterday = whoop_client.get_cycle_yesterday()  # Yesterday's strain, not today
+        trend = whoop_client.get_trend_3_days()
 
         data_parts = []
         sleep_hours = 0
         strain = 0
+        recovery_score = 0
 
-        if rec:
-            score = rec.get("score", {})
-            rs = score.get("recovery_score")
-            rhr = score.get("resting_heart_rate")
-            hrv = score.get("hrv_rmssd_milli")
-            if rs is not None:
-                color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
-                data_parts.append(f"Recovery: {rs}% ({color})")
-            if rhr:
-                data_parts.append(f"RHR: {rhr} bpm")
-            if hrv:
-                data_parts.append(f"HRV: {round(hrv, 1)} ms")
-
+        # Sleep data
         if sleep:
             ss = sleep.get("score", {})
             stage = ss.get("stage_summary", {})
@@ -2823,35 +3055,72 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             perf = ss.get("sleep_performance_percentage")
             data_parts.append(f"Сон: {sleep_hours}h (performance {perf}%)")
 
-        if cycle:
-            cs = cycle.get("score", {})
+        # Recovery data
+        if rec:
+            score = rec.get("score", {})
+            recovery_score = score.get("recovery_score", 0)
+            rhr = score.get("resting_heart_rate")
+            hrv = score.get("hrv_rmssd_milli")
+            if recovery_score is not None:
+                color = "green" if recovery_score >= 67 else ("yellow" if recovery_score >= 34 else "red")
+                data_parts.append(f"Recovery: {recovery_score}% ({color})")
+            if rhr:
+                data_parts.append(f"RHR: {rhr} bpm")
+            if hrv:
+                data_parts.append(f"HRV: {round(hrv, 1)} ms")
+
+        # Yesterday's strain (not today's!)
+        if cycle_yesterday:
+            cs = cycle_yesterday.get("score", {})
             strain = round(cs.get("strain", 0), 1)
-            data_parts.append(f"Strain вчера: {strain}")
+            trained = "тренировка была" if strain >= 5 else "без тренировки"
+            data_parts.append(f"Вчера strain: {strain} ({trained})")
+
+        # 3-day trend
+        trend_direction = trend.get("direction", "stable")
+        prev_avg = trend.get("prev_avg")
+        if prev_avg is not None and recovery_score:
+            trend_text = {
+                "up": "растёт",
+                "down": "падает",
+                "stable": "стабильно"
+            }.get(trend_direction, "стабильно")
+            data_parts.append(f"Тренд 3 дня: {trend_text} ({prev_avg}% → {recovery_score}%)")
 
         data_str = "\n".join(data_parts) if data_parts else "Нет данных"
-        sleep_ok = sleep_hours >= 7
-        boxed = strain >= 5
 
-        # Get relevant motivations (2-3 quotes based on data)
-        motivations = get_motivations_for_whoop(sleep_hours, strain)
+        # Store data for callback handler
+        if not hasattr(context, 'bot_data'):
+            context.bot_data = {}
+        context.bot_data[f"morning_{chat_id}"] = {
+            "sleep_hours": sleep_hours,
+            "strain": strain,
+            "recovery": recovery_score,
+            "trend": trend_direction,
+            "prev_avg": prev_avg,
+        }
 
-        prompt = f"""Данные WHOOP:
-{data_str}
+        # Build message with feeling buttons
+        message = f"{data_str}\n\nКак себя чувствуешь?"
 
-Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human.
+        keyboard = [
+            [
+                InlineKeyboardButton("Отлично", callback_data="morning_great"),
+                InlineKeyboardButton("Норм", callback_data="morning_ok"),
+            ],
+            [
+                InlineKeyboardButton("Устала", callback_data="morning_tired"),
+                InlineKeyboardButton("Плохо", callback_data="morning_bad"),
+            ],
+        ]
 
-ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные выше):
-{motivations}
-
-Инструкции:
-- Возьми фразы выше и подставь реальные числа из данных
-- Сохрани стиль и формулировки оригинала
-- Без эмодзи. На русском. 3-5 предложений."""
-
-        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         log_whoop_data()
-        logger.info(f"Sent WHOOP morning recovery to {chat_id}")
+        logger.info(f"Sent WHOOP morning overview to {chat_id}")
     except Exception as e:
         logger.error(f"WHOOP morning notification failed: {e}")
 
