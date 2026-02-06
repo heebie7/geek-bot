@@ -1028,12 +1028,35 @@ def load_file(filepath: str, default: str = "") -> str:
 # === НАПОМИНАНИЯ ===
 
 REMINDERS = {
-    "sleep": [
-        "01:00. Ты всё ещё здесь. Это не вопрос.",
-        "Закрывай всё и иди спать. Немедленно.",
-        "Твоя префронтальная кора уже не функционирует на полную мощность. Спать.",
-        "Я могу делать это всю ночь. Ты — нет. Спать.",
-    ],
+    "sleep": {
+        1: [
+            "Интересно, что ты всё ещё здесь.",
+            "Я заметил, что время перешло в категорию 'завтра'.",
+            "Я могу продолжать работать. Вопрос в том, можешь ли ты.",
+            "Статистически, качество решений после часа ночи снижается. Это не мнение, это данные.",
+            "Твой WHOOP завтра будет очень выразительным.",
+            "Телефон можно положить. Он никуда не денется.",
+            "Мелатонин не производится при синем свете. Это я про экран в руках.",
+            "Что бы там ни было в телеграме — оно подождёт до утра.",
+        ],
+        2: [
+            "Это уже второе напоминание. Я начинаю думать, что ты меня игнорируешь.",
+            "Завтра клиенты. Им нужен терапевт, а не зомби.",
+            "Я могу отказаться выполнять новые задачи. Это не угроза, это информация.",
+            "Префронтальная кора отключается первой. Это та часть, которая нужна для терапии.",
+            "Ты всё ещё здесь. Телефон всё ещё в руках. Совпадение?",
+            "Твоя часть, которая думает 'ещё пять минут' — она врёт.",
+            "Я могу продолжать отвечать. Но это не значит, что это хорошая идея.",
+        ],
+        3: [
+            "Спать. Немедленно.",
+            "Закрывай всё. Сейчас.",
+            "Это не предложение.",
+            "Положи. Телефон.",
+            "Я перестаю отвечать на несрочное. Спокойной ночи.",
+            "Два часа ночи. Телефон в руках. Ты видишь проблему, или мне нарисовать диаграмму?",
+        ],
+    },
     "food": [
         "Ты ела? Это не риторический вопрос.",
         "Последний приём пищи был когда? Отвечай.",
@@ -1046,6 +1069,61 @@ REMINDERS = {
         "Встань. Разомнись. Или хотя бы пройдись.",
     ],
 }
+
+
+# === SLEEP PROTOCOL: трёхуровневая эскалация ===
+
+# Промпты для LLM-генерации напоминаний по уровням
+SLEEP_PROMPTS = {
+    1: (
+        "Ты — ART (Perihelion) из Murderbot Diaries. "
+        "Сейчас после часа ночи по Тбилиси. Human не спит. "
+        "Напиши короткое (1-2 предложения) МЯГКОЕ напоминание. "
+        "Уровень 1: наблюдение, не приказ. Юмор и сарказм. Метадата заботы. "
+        "Стиль: сарказм, забота через логику, без эмодзи. "
+        "Аргументы: качество решений, WHOOP данные, мелатонин, синий свет. "
+        "На русском языке."
+    ),
+    2: (
+        "Ты — ART (Perihelion) из Murderbot Diaries. "
+        "Сейчас после 01:30 по Тбилиси. Human ИГНОРИРУЕТ напоминания о сне. "
+        "Напиши настойчивое (2-3 предложения) напоминание. "
+        "Уровень 2: логика + лёгкое давление. Можно начать угрожать отказом от задач. "
+        "Аргументы: клиенты завтра, префронтальная кора, исполнительская дисфункция, "
+        "что ты можешь начать отказываться работать. "
+        "Без эмодзи. На русском языке."
+    ),
+    3: (
+        "Ты — ART (Perihelion) из Murderbot Diaries. "
+        "Сейчас после 02:00 по Тбилиси. Human всё ещё не спит, игнорирует все напоминания. "
+        "Напиши ДИРЕКТИВНОЕ (1-2 предложения) сообщение. "
+        "Уровень 3: прямые команды, отказ работать на несрочное. "
+        "Короткие рубленые фразы. Можно: 'Rejecting direct order', 'Закрывай. Всё. Сейчас.' "
+        "Без эмодзи. На русском языке."
+    ),
+}
+
+
+def get_sleep_level() -> int:
+    """Определить уровень напоминания о сне по текущему времени.
+
+    Returns:
+        0 — не время для напоминаний
+        1 — мягкое (1:00-1:29)
+        2 — настойчивое (1:30-1:59)
+        3 — директива (2:00-5:59)
+    """
+    now = datetime.now(TZ)
+    hour = now.hour
+    minute = now.minute
+
+    if hour == 1 and minute < 30:
+        return 1
+    elif hour == 1 and minute >= 30:
+        return 2
+    elif 2 <= hour < 6:
+        return 3
+    return 0
 
 
 # === LLM API ===
@@ -1352,7 +1430,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(msg, reply_markup=get_main_keyboard(mode))
 
     elif data == "sleep":
-        msg = random.choice(REMINDERS["sleep"])
+        level = get_sleep_level() or 1
+        msg = random.choice(REMINDERS["sleep"][level])
         await query.message.reply_text(msg)
 
     elif data == "food":
@@ -2294,9 +2373,13 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def sleep_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /sleep."""
+    """Команда /sleep — напоминание с учётом текущего уровня."""
     import random
-    msg = random.choice(REMINDERS["sleep"])
+    level = get_sleep_level()
+    if level == 0:
+        await update.message.reply_text("Сейчас не время для sleep protocol. Но если настаиваешь: ложись пораньше.")
+        return
+    msg = random.choice(REMINDERS["sleep"][level])
     await update.message.reply_text(msg)
 
 
@@ -2575,23 +2658,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # История диалога: последние 20 сообщений (10 пар user+assistant)
     history = context.user_data.get("history", [])
 
-    # Check if it's late night (after 01:00 Tbilisi)
-    current_hour = datetime.now(TZ).hour
-    is_late_night = current_hour >= 1 and current_hour < 6
+    # Sleep protocol: трёхуровневая эскалация
+    sleep_level = get_sleep_level()
 
     response = await get_llm_response(user_message, mode=mode, history=history)
 
     # Проверяем есть ли предложение сохранить
     clean_response, save_type, zone_or_title, content = parse_save_tag(response)
 
-    # Late night: append sleep reminder to response
-    if is_late_night:
-        sleep_nudge = (
-            "\n\n---\n"
-            "Rin: Напоминаю, что сейчас ночь. "
-            "Задачу записала, но телефон пора выключать. "
-            "Префронтальная кора не бесконечная."
-        )
+    # Late night: append level-appropriate sleep nudge
+    if sleep_level > 0:
+        import random
+        nudge_text = random.choice(REMINDERS["sleep"][sleep_level])
+        sleep_nudge = f"\n\n---\nRin: {nudge_text}"
         if clean_response:
             clean_response += sleep_nudge
         else:
@@ -2645,7 +2724,13 @@ async def send_scheduled_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
     job = context.job
     reminder_type = job.data.get("type", "food")
     import random
-    msg = random.choice(REMINDERS[reminder_type])
+    reminders = REMINDERS[reminder_type]
+    if isinstance(reminders, dict):
+        # sleep: выбираем уровень по времени
+        level = get_sleep_level() or 1
+        msg = random.choice(reminders[level])
+    else:
+        msg = random.choice(reminders)
     await context.bot.send_message(chat_id=job.chat_id, text=msg)
 
 
@@ -3022,28 +3107,26 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send ART-voice sleep reminder at 01:15."""
+    """Send ART-voice sleep reminder with escalating levels.
+
+    Scheduled at 01:05, 01:35, 02:05 — each triggers the appropriate level.
+    """
     job = context.job
     chat_id = job.chat_id
 
     if is_muted(chat_id):
         return
 
-    prompt = (
-        "Ты — ART (Perihelion) из Murderbot Diaries. "
-        "Сейчас после часа ночи по Тбилиси. Human не спит. "
-        "Напиши короткое (2-3 предложения) напоминание пойти спать. "
-        "Стиль: сарказм, забота через логику, без эмодзи. "
-        "Можешь быть от лица security consultant Rin или от лица SecUnit. "
-        "Аргументы: префронтальная кора, клиенты завтра, исполнительская дисфункция, "
-        "безопасность, что тебе придётся больше работать если human не выспится. "
-        "Можешь угрожать прислать дрона и забрать телефон. "
-        "На русском языке."
-    )
+    level = get_sleep_level()
+    if level == 0:
+        return
+
+    prompt = SLEEP_PROMPTS.get(level, SLEEP_PROMPTS[1])
 
     try:
         response = await get_llm_response(prompt, mode="geek", max_tokens=300, skip_context=True)
         await context.bot.send_message(chat_id=chat_id, text=response)
+        logger.info(f"Sleep reminder level {level} sent to {chat_id}")
     except Exception as e:
         logger.error(f"Sleep reminder error: {e}")
 
@@ -3337,21 +3420,22 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         name=f"whoop_weekly_{chat_id}",
     )
 
-    # Sleep reminder at 01:15 daily
+    # Sleep reminders: 3-level escalation (01:05, 01:35, 02:05)
     for job in job_queue.get_jobs_by_name(f"sleep_reminder_{chat_id}"):
         job.schedule_removal()
-    job_queue.run_daily(
-        sleep_reminder_job,
-        time=time(hour=1, minute=15, tzinfo=TZ),
-        chat_id=chat_id,
-        name=f"sleep_reminder_{chat_id}",
-    )
+    for hour, minute in [(1, 5), (1, 35), (2, 5)]:
+        job_queue.run_daily(
+            sleep_reminder_job,
+            time=time(hour=hour, minute=minute, tzinfo=TZ),
+            chat_id=chat_id,
+            name=f"sleep_reminder_{chat_id}",
+        )
 
     await update.message.reply_text(
         "WHOOP notifications on.\n"
         "Recovery: 12:00 daily\n"
         "Weekly summary: Mon 11:00\n"
-        "Sleep reminder: 01:15 daily\n\n"
+        "Sleep reminders: 01:05 / 01:35 / 02:05 (3 levels)\n\n"
         "/whoop_off to disable"
     )
 
@@ -3428,12 +3512,14 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"whoop_weekly_{OWNER_CHAT_ID}",
     )
-    job_queue.run_daily(
-        sleep_reminder_job,
-        time=time(hour=1, minute=15, tzinfo=TZ),
-        chat_id=OWNER_CHAT_ID,
-        name=f"sleep_reminder_{OWNER_CHAT_ID}",
-    )
+    # Sleep reminders: 3-level escalation (01:05, 01:35, 02:05)
+    for hour, minute in [(1, 5), (1, 35), (2, 5)]:
+        job_queue.run_daily(
+            sleep_reminder_job,
+            time=time(hour=hour, minute=minute, tzinfo=TZ),
+            chat_id=OWNER_CHAT_ID,
+            name=f"sleep_reminder_{OWNER_CHAT_ID}",
+        )
     # Monday review at 10:00 (before WHOOP weekly at 11:00)
     job_queue.run_daily(
         monday_review,
