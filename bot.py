@@ -608,6 +608,26 @@ def add_task_to_zone(task: str, zone: str) -> bool:
     return save_writing_file("life/tasks.md", tasks, f"Add task: {task[:30]}")
 
 
+def complete_task(task_line: str) -> bool:
+    """Отметить задачу как выполненную в life/tasks.md.
+
+    Ищет точное совпадение строки '- [ ] {task_line}' и заменяет на
+    '- [x] {task_line} ✅ YYYY-MM-DD'.
+    """
+    tasks = get_life_tasks()
+    search = f"- [ ] {task_line}"
+
+    if search not in tasks:
+        logger.warning(f"Task not found for completion: {task_line[:50]}")
+        return False
+
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    replacement = f"- [x] {task_line} ✅ {today}"
+    tasks = tasks.replace(search, replacement, 1)  # Только первое вхождение
+
+    return save_writing_file("life/tasks.md", tasks, f"Complete: {task_line[:30]}")
+
+
 # Zone emojis for task adding
 ZONE_EMOJI = {
     "фундамент": "🏠",
@@ -1947,13 +1967,62 @@ Human ответила на вопрос "как себя чувствуешь?"
         else:
             await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
 
+    elif data.startswith("done_"):
+        task_hash = data[5:]  # убираем "done_"
+        task_map = context.bot_data.get("task_done_map", {})
+        task_text = task_map.get(task_hash)
+
+        if not task_text:
+            await query.edit_message_text("Задача не найдена. Попробуй обновить dashboard.")
+            return
+
+        if complete_task(task_text):
+            # Убираем кнопку выполненной задачи из клавиатуры
+            old_markup = query.message.reply_markup
+            if old_markup:
+                new_buttons = [
+                    row for row in old_markup.inline_keyboard
+                    if not any(btn.callback_data == data for btn in row)
+                ]
+                # Обновляем текст: зачёркиваем выполненную задачу
+                display = task_text.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
+                old_text = query.message.text
+                # Находим строку с этой задачей и помечаем
+                for line in old_text.split("\n"):
+                    clean_line = line.lstrip("0123456789. ")
+                    if display[:20] in clean_line:
+                        old_text = old_text.replace(line, f"~{line}~ ✅")
+                        break
+
+                if new_buttons:
+                    await query.edit_message_text(
+                        old_text,
+                        reply_markup=InlineKeyboardMarkup(new_buttons),
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await query.edit_message_text(
+                        old_text + "\n\nВсё сделано. Можно дышать.",
+                        parse_mode="Markdown"
+                    )
+            # Чистим маппинг
+            task_map.pop(task_hash, None)
+        else:
+            await query.edit_message_text("Не удалось отметить. Задача могла измениться.")
+
     elif data == "cancel_steps":
         context.user_data.pop("pending_steps", None)
         await query.edit_message_text(query.message.text.split("\n\n—")[0])
 
 
+def _task_hash(task_text: str) -> str:
+    """Короткий хеш задачи для callback data (8 hex chars)."""
+    import hashlib
+    return hashlib.md5(task_text.encode()).hexdigest()[:8]
+
+
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /dashboard — быстрый обзор: что горит + на этой неделе."""
+    """Команда /dashboard — быстрый обзор: что горит + на этой неделе, с кнопками Done."""
     tasks_content = get_life_tasks()
     now = datetime.now(TZ)
     end_of_week = now + timedelta(days=(6 - now.weekday()))  # Воскресенье
@@ -1961,47 +2030,70 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     lines = tasks_content.split("\n")
     high_priority = []
-    medium_priority = []
     due_this_week = []
 
     for line in lines:
         stripped = line.strip()
         if not stripped.startswith("- [ ]"):
             continue
-        # Убираем "- [ ] "
         task_text = stripped[6:]
 
         has_high = "⏫" in task_text or "🔺" in task_text
         has_medium = "🔼" in task_text
-        # Ищем дату 📅 YYYY-MM-DD
         due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
 
         if has_high and not due_match:
             high_priority.append(task_text)
-        elif has_medium and not due_match:
-            medium_priority.append(task_text)
-
-        if due_match:
+        elif due_match:
             due_date = due_match.group(1)
             if due_date <= end_date:
                 due_this_week.append(task_text)
             elif has_high:
                 high_priority.append(task_text)
-            elif has_medium:
-                medium_priority.append(task_text)
 
-    msg_parts = []
+    # Собираем все задачи для кнопок
+    all_tasks = high_priority + due_this_week
+    if not all_tasks:
+        await update.message.reply_text("Ничего срочного. Можно дышать.")
+        return
+
+    # Сохраняем маппинг hash -> task_text для callback
+    task_map = context.bot_data.setdefault("task_done_map", {})
+    for t in all_tasks:
+        task_map[_task_hash(t)] = t
+
+    # Формируем сообщение с нумерацией
+    msg_lines = []
+    buttons = []
 
     if high_priority:
-        msg_parts.append("🔥 Горит:\n" + "\n".join(f"• {t}" for t in high_priority))
+        msg_lines.append("🔥 *Горит:*")
+        for i, t in enumerate(high_priority, 1):
+            # Убираем эмодзи приоритетов для читаемости в сообщении
+            display = t.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
+            msg_lines.append(f"{i}. {display}")
+            buttons.append([InlineKeyboardButton(
+                f"✅ {i}. {display[:30]}{'...' if len(display) > 30 else ''}",
+                callback_data=f"done_{_task_hash(t)}"
+            )])
 
     if due_this_week:
-        msg_parts.append("📅 На этой неделе:\n" + "\n".join(f"• {t}" for t in due_this_week))
+        offset = len(high_priority)
+        msg_lines.append("\n📅 *На этой неделе:*")
+        for i, t in enumerate(due_this_week, offset + 1):
+            display = t.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
+            msg_lines.append(f"{i}. {display}")
+            buttons.append([InlineKeyboardButton(
+                f"✅ {i}. {display[:30]}{'...' if len(display) > 30 else ''}",
+                callback_data=f"done_{_task_hash(t)}"
+            )])
 
-    if not high_priority and not due_this_week:
-        msg_parts.append("Ничего срочного. Можно дышать.")
-
-    await update.message.reply_text("\n\n".join(msg_parts))
+    keyboard = InlineKeyboardMarkup(buttons)
+    await update.message.reply_text(
+        "\n".join(msg_lines),
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
 
 
 def _get_priority_tasks() -> str:
