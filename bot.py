@@ -1863,6 +1863,7 @@ Human ответила на вопрос "как себя чувствуешь?"
 - Без эмодзи. На русском. 3-5 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
+        text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         await query.edit_message_text(text)
         logger.info(f"Sent WHOOP morning motivation ({mode}) to {query.message.chat.id}")
@@ -3189,6 +3190,7 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 - Без эмодзи. На русском."""
 
             text = await get_llm_response(prompt, mode="geek", max_tokens=600, skip_context=True)
+            text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         else:
             text = data_text
 
@@ -3394,6 +3396,8 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
 Без эмодзи. На русском. 5-8 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True)
+        # Strip SAVE tags — LLM sometimes generates them in scheduled messages
+        text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         await context.bot.send_message(chat_id=chat_id, text=text)
         log_whoop_data()
         logger.info(f"Sent WHOOP weekly summary to {chat_id}")
@@ -3505,7 +3509,7 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     job_queue.run_daily(
         whoop_weekly_summary,
         time=time(hour=11, minute=0, tzinfo=TZ),
-        days=(0,),  # Monday
+        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
         chat_id=chat_id,
         name=f"whoop_weekly_{chat_id}",
     )
@@ -3598,7 +3602,7 @@ def main() -> None:
     job_queue.run_daily(
         whoop_weekly_summary,
         time=time(hour=11, minute=0, tzinfo=TZ),
-        days=(0,),  # Monday
+        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
         chat_id=OWNER_CHAT_ID,
         name=f"whoop_weekly_{OWNER_CHAT_ID}",
     )
@@ -3614,7 +3618,7 @@ def main() -> None:
     job_queue.run_daily(
         monday_review,
         time=time(hour=10, minute=0, tzinfo=TZ),
-        days=(0,),  # Monday
+        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
         chat_id=OWNER_CHAT_ID,
         name=f"monday_review_{OWNER_CHAT_ID}",
     )
