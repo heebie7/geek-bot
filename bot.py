@@ -584,8 +584,11 @@ def get_life_tasks() -> str:
         return default_tasks
     return content
 
-def add_task_to_zone(task: str, zone: str) -> bool:
-    """Добавить задачу в определённую зону в life/tasks.md."""
+def add_task_to_zone(task: str, destination: str) -> bool:
+    """Добавить задачу в зону или проект в life/tasks.md.
+
+    destination может быть зоной (фундамент, драйв, ...) или проектом (geek-bot, ...).
+    """
     tasks = get_life_tasks()
 
     # Маппинг зон на заголовки
@@ -598,7 +601,13 @@ def add_task_to_zone(task: str, zone: str) -> bool:
         "финансы": "## Финансы",
     }
 
-    header = zone_headers.get(zone.lower(), "## Драйв")
+    dest_lower = destination.lower()
+
+    # Check if it's a project first
+    if dest_lower in PROJECT_HEADERS:
+        header = PROJECT_HEADERS[dest_lower]
+    else:
+        header = zone_headers.get(dest_lower, "## Драйв")
 
     if header in tasks:
         tasks = tasks.replace(header, f"{header}\n- [ ] {task}")
@@ -635,63 +644,159 @@ ZONE_EMOJI = {
     "кайф": "✨",
     "партнёрство": "💑",
     "дети": "👶",
-    "финансы": "💰"
+    "финансы": "💰",
 }
+
+# Project emojis and headers (sub-sections within zones)
+PROJECT_EMOJI = {
+    "geek-bot": "🤖",
+    "therapy-bot": "💬",
+    "neurotype-mismatch": "🔬",
+    "openclaw": "🐾",
+    "переезд": "✈️",
+    "ifs-сертификация": "📜",
+    "финучёт": "📊",
+}
+
+# Project -> header in tasks.md
+PROJECT_HEADERS = {
+    "geek-bot": "#### geek-bot",
+    "therapy-bot": "#### therapy-bot",
+    "neurotype-mismatch": "#### Исследование: Neurotype Mismatch",
+    "openclaw": "#### OpenClaw",
+    "переезд": "#### Переезд",
+    "ifs-сертификация": "#### Сертификация IFS",
+    "финучёт": "#### Финансовый учёт — допилить",
+}
+
+# Combined: zones + projects for display
+ALL_DESTINATIONS = {**ZONE_EMOJI, **PROJECT_EMOJI}
 
 
 async def suggest_zone_for_task(task: str) -> str:
-    """Use LLM to suggest which zone a task belongs to."""
-    prompt = f"""Определи, в какую зону относится задача. Зоны:
+    """Use LLM to suggest which zone or project a task belongs to."""
+    prompt = f"""Определи, куда относится задача. Варианты:
+
+Зоны:
 - фундамент: базовые потребности (сон, еда, здоровье, гигиена, уборка)
-- драйв: работа, проекты, развитие, обучение
+- драйв: работа, проекты, развитие, обучение (общее)
 - кайф: удовольствие, хобби, отдых, развлечения
 - партнёрство: отношения с партнёром
 - дети: всё связанное с детьми
 - финансы: деньги, счета, покупки
 
+Проекты (если задача явно про конкретный проект):
+- geek-bot: личный Telegram бот-помощник
+- therapy-bot: Telegram бот для клиентов-терапии
+- neurotype-mismatch: исследование несовпадения нейротипов
+- openclaw: open source проект
+- переезд: визы, документы, переезд в другую страну
+- ifs-сертификация: сертификация IFS терапевта
+- финучёт: финансовый учёт, парсеры, скрипты обработки данных
+
 Задача: {task}
 
-Ответь ТОЛЬКО одним словом — названием зоны (фундамент/драйв/кайф/партнёрство/дети/финансы)."""
+Ответь ТОЛЬКО одним словом/фразой — названием зоны или проекта."""
 
     try:
         response = await get_llm_response(prompt, mode="geek", history=[])
-        zone = response.strip().lower()
-        # Validate zone
-        if zone in ZONE_EMOJI:
-            return zone
-        # Try to extract zone from response
-        for z in ZONE_EMOJI.keys():
-            if z in zone:
-                return z
+        dest = response.strip().lower()
+        # Direct match
+        if dest in ALL_DESTINATIONS:
+            return dest
+        # Normalize ё→е for fuzzy match
+        dest_norm = dest.replace("ё", "е")
+        for d in ALL_DESTINATIONS.keys():
+            d_norm = d.replace("ё", "е")
+            if d_norm == dest_norm or d_norm in dest_norm or dest_norm in d_norm:
+                return d
         return "драйв"  # Default
     except:
         return "драйв"
 
 
-def get_task_confirm_keyboard(task_index: int, suggested_zone: str) -> InlineKeyboardMarkup:
-    """Keyboard for confirming task zone."""
-    # First row: confirm suggested zone
-    emoji = ZONE_EMOJI.get(suggested_zone, "📋")
+def get_task_confirm_keyboard(task_index: int, suggested: str) -> InlineKeyboardMarkup:
+    """Keyboard for confirming task destination (zone or project)."""
+    # First row: confirm suggestion
+    emoji = ALL_DESTINATIONS.get(suggested, "📋")
     keyboard = [
-        [InlineKeyboardButton(f"✅ {emoji} {suggested_zone.capitalize()}", callback_data=f"taskzone_{task_index}_{suggested_zone}")],
+        [InlineKeyboardButton(f"✅ {emoji} {suggested.capitalize()}", callback_data=f"taskzone_{task_index}_{suggested}")],
     ]
 
-    # Second row: alternative zones (excluding suggested)
-    other_zones = [z for z in ZONE_EMOJI.keys() if z != suggested_zone]
+    # Zones row (excluding suggested)
+    other_zones = [z for z in ZONE_EMOJI.keys() if z != suggested]
     row = []
-    for zone in other_zones[:3]:  # First 3
-        emoji = ZONE_EMOJI[zone]
-        row.append(InlineKeyboardButton(f"{emoji}", callback_data=f"taskzone_{task_index}_{zone}"))
+    for zone in other_zones:
+        e = ZONE_EMOJI[zone]
+        row.append(InlineKeyboardButton(f"{e}", callback_data=f"taskzone_{task_index}_{zone}"))
     keyboard.append(row)
 
-    # Third row: remaining zones + skip
+    # Projects row (excluding suggested)
+    other_projects = [p for p in PROJECT_EMOJI.keys() if p != suggested]
     row = []
-    for zone in other_zones[3:]:  # Remaining
-        emoji = ZONE_EMOJI[zone]
-        row.append(InlineKeyboardButton(f"{emoji}", callback_data=f"taskzone_{task_index}_{zone}"))
-    row.append(InlineKeyboardButton("⏭ Пропустить", callback_data=f"taskzone_{task_index}_skip"))
+    for proj in other_projects[:4]:  # max 4 per row
+        e = PROJECT_EMOJI[proj]
+        row.append(InlineKeyboardButton(f"{e}", callback_data=f"taskzone_{task_index}_{proj}"))
+    keyboard.append(row)
+    if len(other_projects) > 4:
+        row = []
+        for proj in other_projects[4:]:
+            e = PROJECT_EMOJI[proj]
+            row.append(InlineKeyboardButton(f"{e}", callback_data=f"taskzone_{task_index}_{proj}"))
+        keyboard.append(row)
+
+    # Skip button
+    keyboard.append([InlineKeyboardButton("⏭ Пропустить", callback_data=f"taskzone_{task_index}_skip")])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_destination_keyboard(callback_prefix: str = "adddest_") -> InlineKeyboardMarkup:
+    """Keyboard for choosing zone or project as task destination.
+
+    callback_prefix allows reuse for different flows (adddest_ for /add, taskzone_ for button Add).
+    """
+    keyboard = []
+
+    # Row 1: main zones (3 per row)
+    zones = list(ZONE_EMOJI.items())
+    row = []
+    for name, emoji in zones[:3]:
+        row.append(InlineKeyboardButton(f"{emoji} {name.capitalize()}", callback_data=f"{callback_prefix}{name}"))
     keyboard.append(row)
 
+    row = []
+    for name, emoji in zones[3:]:
+        row.append(InlineKeyboardButton(f"{emoji} {name.capitalize()}", callback_data=f"{callback_prefix}{name}"))
+    keyboard.append(row)
+
+    # Separator label
+    keyboard.append([InlineKeyboardButton("— Проекты —", callback_data="noop")])
+
+    # Projects (2 per row)
+    projects = list(PROJECT_EMOJI.items())
+    for i in range(0, len(projects), 2):
+        row = []
+        for name, emoji in projects[i:i+2]:
+            short_name = name.replace("-", " ").capitalize()
+            row.append(InlineKeyboardButton(f"{emoji} {short_name}", callback_data=f"{callback_prefix}{name}"))
+        keyboard.append(row)
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_priority_keyboard(callback_prefix: str = "addpri_") -> InlineKeyboardMarkup:
+    """Inline keyboard for priority selection."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Срочное ⏫", callback_data=f"{callback_prefix}high"),
+            InlineKeyboardButton("Обычное 🔼", callback_data=f"{callback_prefix}medium"),
+        ],
+        [
+            InlineKeyboardButton("Не срочное 🔽", callback_data=f"{callback_prefix}low"),
+            InlineKeyboardButton("Без приоритета", callback_data=f"{callback_prefix}none"),
+        ],
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -1383,6 +1488,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
     import random
 
+    if data == "noop":
+        # Separator button, do nothing
+        return
+
     if data == "mode_geek":
         context.user_data["mode"] = "geek"
         await query.edit_message_text(
@@ -1568,18 +1677,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("Нечего сохранять.")
             return
 
-        # Показываем все зоны
-        zones = ["драйв", "фундамент", "кайф", "партнёрство", "дети", "финансы"]
+        # Показываем зоны + проекты
         keyboard = []
+        zones = list(ZONE_EMOJI.items())
         for i in range(0, len(zones), 2):
-            row = [InlineKeyboardButton(zones[i].capitalize(), callback_data=f"zone_{zones[i]}")]
-            if i + 1 < len(zones):
-                row.append(InlineKeyboardButton(zones[i+1].capitalize(), callback_data=f"zone_{zones[i+1]}"))
+            row = []
+            for name, emoji in zones[i:i+2]:
+                row.append(InlineKeyboardButton(f"{emoji} {name.capitalize()}", callback_data=f"zone_{name}"))
             keyboard.append(row)
+
+        # Projects
+        projects = list(PROJECT_EMOJI.items())
+        for i in range(0, len(projects), 2):
+            row = []
+            for name, emoji in projects[i:i+2]:
+                short = name.replace("-", " ").capitalize()
+                row.append(InlineKeyboardButton(f"{emoji} {short}", callback_data=f"zone_{name}"))
+            keyboard.append(row)
+
         keyboard.append([InlineKeyboardButton("Отмена", callback_data="save_cancel")])
 
         await query.edit_message_text(
-            f"Задача: {pending['content']}\n\nВыбери зону:",
+            f"Задача: {pending['content']}\n\nВыбери зону или проект:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -1722,12 +1841,44 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 parse_mode="Markdown"
             )
 
+    elif data.startswith("batchpri_"):
+        # Batch priority selected — apply to all pending tasks, start zone picking
+        tasks = context.user_data.get("pending_batch_tasks", [])
+        if not tasks:
+            await query.edit_message_text("Нечего добавлять.")
+            return
+
+        priority = data.replace("batchpri_", "")
+        priority_map = {"high": " ⏫", "medium": " 🔼", "low": " 🔽", "none": ""}
+        suffix = priority_map.get(priority, "")
+
+        # Apply priority to all tasks
+        tasks_with_pri = [t + suffix for t in tasks]
+        context.user_data["pending_tasks"] = tasks_with_pri
+        context.user_data.pop("pending_batch_tasks", None)
+
+        await query.edit_message_text(f"Приоритет применён к {len(tasks_with_pri)} задачам.")
+
+        # Start zone/project picking for first task
+        task = tasks_with_pri[0]
+        suggested = await suggest_zone_for_task(task)
+        emoji = ALL_DESTINATIONS.get(suggested, "📋")
+
+        remaining = len(tasks_with_pri) - 1
+        remaining_text = f"\n\n_Осталось: {remaining}_" if remaining > 0 else ""
+
+        await query.message.reply_text(
+            f"**Задача:** {task}\n\nПредлагаю: {emoji} **{suggested.capitalize()}**{remaining_text}",
+            reply_markup=get_task_confirm_keyboard(0, suggested),
+            parse_mode="Markdown"
+        )
+
     elif data.startswith("taskzone_"):
-        # Handle task zone confirmation: taskzone_0_драйв or taskzone_0_skip
+        # Handle task zone/project confirmation: taskzone_0_драйв or taskzone_0_geek-bot
         parts = data.split("_")
         if len(parts) >= 3:
             task_idx = int(parts[1])
-            zone = "_".join(parts[2:])  # In case zone has underscore
+            destination = "_".join(parts[2:])  # zone or project name
 
             pending_tasks = context.user_data.get("pending_tasks", [])
             added_tasks = context.user_data.get("pending_tasks_added", [])
@@ -1735,16 +1886,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if task_idx < len(pending_tasks):
                 task = pending_tasks[task_idx]
 
-                if zone == "skip":
-                    # Skip this task
+                if destination == "skip":
                     await query.edit_message_text(f"⏭ Пропущено: {task}")
                 else:
-                    # Add task to zone
-                    if add_task_to_zone(task, zone):
-                        emoji = ZONE_EMOJI.get(zone, "📋")
+                    if add_task_to_zone(task, destination):
+                        emoji = ALL_DESTINATIONS.get(destination, "📋")
                         added_tasks.append(f"{emoji} {task}")
                         context.user_data["pending_tasks_added"] = added_tasks
-                        await query.edit_message_text(f"✅ {emoji} {task} → {zone.capitalize()}")
+                        await query.edit_message_text(f"✅ {emoji} {task} → {destination.capitalize()}")
                     else:
                         await query.edit_message_text(f"❌ Не удалось добавить: {task}")
 
@@ -1752,16 +1901,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 next_idx = task_idx + 1
                 if next_idx < len(pending_tasks):
                     next_task = pending_tasks[next_idx]
-                    suggested_zone = await suggest_zone_for_task(next_task)
-                    emoji = ZONE_EMOJI.get(suggested_zone, "📋")
+                    suggested = await suggest_zone_for_task(next_task)
+                    emoji = ALL_DESTINATIONS.get(suggested, "📋")
 
                     remaining = len(pending_tasks) - next_idx - 1
                     remaining_text = f"\n\n_Осталось: {remaining}_" if remaining > 0 else ""
 
                     await query.message.reply_text(
-                        f"**Задача:** {next_task}\n\n"
-                        f"Предлагаю: {emoji} **{suggested_zone.capitalize()}**{remaining_text}",
-                        reply_markup=get_task_confirm_keyboard(next_idx, suggested_zone),
+                        f"**Задача:** {next_task}\n\nПредлагаю: {emoji} **{suggested.capitalize()}**{remaining_text}",
+                        reply_markup=get_task_confirm_keyboard(next_idx, suggested),
                         parse_mode="Markdown"
                     )
                 else:
@@ -1952,7 +2100,7 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
             await query.answer("Шаг не найден")
 
     elif data.startswith("addpri_"):
-        task_text = context.user_data.pop("pending_add_task", None)
+        task_text = context.user_data.get("pending_add_task")
         if not task_text:
             await query.edit_message_text("Нечего добавлять.")
             return
@@ -1961,8 +2109,29 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         priority_map = {"high": " ⏫", "medium": " 🔼", "low": " 🔽", "none": ""}
         task_with_priority = task_text + priority_map.get(priority, "")
 
-        if add_task_to_zone(task_with_priority, "драйв"):
-            await query.edit_message_text(f"Добавлено в Драйв: {task_with_priority}")
+        # Store task with priority, show zone/project picker
+        context.user_data["pending_add_task"] = task_with_priority
+        context.user_data["pending_add_ready"] = True  # task has priority now
+
+        await query.edit_message_text(
+            f"Задача: {task_with_priority}\n\nКуда?",
+            reply_markup=get_destination_keyboard()
+        )
+
+    elif data.startswith("adddest_"):
+        # Zone/project selected for /add task
+        task_text = context.user_data.pop("pending_add_task", None)
+        context.user_data.pop("pending_add_ready", None)
+        if not task_text:
+            await query.edit_message_text("Нечего добавлять.")
+            return
+
+        destination = data.replace("adddest_", "")
+        emoji = ALL_DESTINATIONS.get(destination, "📋")
+        display_name = destination.capitalize()
+
+        if add_task_to_zone(task_text, destination):
+            await query.edit_message_text(f"✅ {emoji} {task_text} → {display_name}")
         else:
             await query.edit_message_text("Не удалось сохранить. Проверь GitHub токен.")
 
@@ -2391,19 +2560,9 @@ async def addtask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     task_text = " ".join(context.args)
     context.user_data["pending_add_task"] = task_text
 
-    keyboard = [
-        [
-            InlineKeyboardButton("Срочное ⏫", callback_data="addpri_high"),
-            InlineKeyboardButton("Обычное 🔼", callback_data="addpri_medium"),
-        ],
-        [
-            InlineKeyboardButton("Не срочное 🔽", callback_data="addpri_low"),
-            InlineKeyboardButton("Без приоритета", callback_data="addpri_none"),
-        ],
-    ]
     await update.message.reply_text(
         f"Задача: {task_text}\n\nПриоритет?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=get_priority_keyboard()
     )
 
 
@@ -2650,8 +2809,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif user_message == "➕ Add":
         context.user_data["add_mode"] = True
         await update.message.reply_text(
-            "Напиши задачу или список задач (каждая с новой строки).\n"
-            "Отправлю в Драйв.",
+            "Напиши задачу или список задач (каждая с новой строки).",
             reply_markup=get_reply_keyboard()
         )
         return
@@ -2724,26 +2882,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        # Store tasks for sequential processing
-        context.user_data["pending_tasks"] = tasks
-        context.user_data["pending_tasks_added"] = []
-
-        # Process first task
-        task = tasks[0]
-        await update.message.reply_text(f"Анализирую {len(tasks)} задач...")
-
-        suggested_zone = await suggest_zone_for_task(task)
-        emoji = ZONE_EMOJI.get(suggested_zone, "📋")
-
-        remaining = len(tasks) - 1
-        remaining_text = f"\n\n_Осталось: {remaining}_" if remaining > 0 else ""
-
-        await update.message.reply_text(
-            f"**Задача:** {task}\n\n"
-            f"Предлагаю: {emoji} **{suggested_zone.capitalize()}**{remaining_text}",
-            reply_markup=get_task_confirm_keyboard(0, suggested_zone),
-            parse_mode="Markdown"
-        )
+        if len(tasks) == 1:
+            # Single task: priority -> zone/project (same flow as /add)
+            context.user_data["pending_add_task"] = tasks[0]
+            await update.message.reply_text(
+                f"Задача: {tasks[0]}\n\nПриоритет?",
+                reply_markup=get_priority_keyboard()
+            )
+        else:
+            # Multiple tasks: ask one shared priority first
+            context.user_data["pending_batch_tasks"] = tasks
+            context.user_data["pending_tasks_added"] = []
+            await update.message.reply_text(
+                f"{len(tasks)} задач. Общий приоритет?",
+                reply_markup=get_priority_keyboard("batchpri_")
+            )
         return
 
     # История диалога: последние 20 сообщений (10 пар user+assistant)
