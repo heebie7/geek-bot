@@ -1050,31 +1050,29 @@ def load_file(filepath: str, default: str = "") -> str:
 REMINDERS = {
     "sleep": {
         1: [
-            "Интересно, что ты всё ещё здесь.",
-            "Я заметил, что время перешло в категорию 'завтра'.",
-            "Я могу продолжать работать. Вопрос в том, можешь ли ты.",
-            "Статистически, качество решений после часа ночи снижается. Это не мнение, это данные.",
-            "Твой WHOOP завтра будет очень выразительным.",
             "Телефон можно положить. Он никуда не денется.",
+            "Doom-scrolling в час ночи — это не отдых. Это имитация.",
             "Мелатонин не производится при синем свете. Это я про экран в руках.",
             "Что бы там ни было в телеграме — оно подождёт до утра.",
+            "Ты держишь в руках устройство, которое мешает тебе спать. Просто наблюдение.",
+            "Интересно, что ты всё ещё здесь.",
+            "Твой WHOOP завтра будет очень выразительным.",
         ],
         2: [
+            "Ты всё ещё здесь. Телефон всё ещё в руках. Совпадение?",
+            "Твоя часть, которая думает 'ещё пять минут скроллинга' — она врёт.",
+            "Завтра ты будешь благодарна себе за то, что положила телефон сейчас. Или нет.",
+            "Я могу продолжать отвечать. Но это не значит, что это хорошая идея.",
             "Это уже второе напоминание. Я начинаю думать, что ты меня игнорируешь.",
             "Завтра клиенты. Им нужен терапевт, а не зомби.",
-            "Я могу отказаться выполнять новые задачи. Это не угроза, это информация.",
             "Префронтальная кора отключается первой. Это та часть, которая нужна для терапии.",
-            "Ты всё ещё здесь. Телефон всё ещё в руках. Совпадение?",
-            "Твоя часть, которая думает 'ещё пять минут' — она врёт.",
-            "Я могу продолжать отвечать. Но это не значит, что это хорошая идея.",
         ],
         3: [
-            "Спать. Немедленно.",
-            "Закрывай всё. Сейчас.",
-            "Это не предложение.",
             "Положи. Телефон.",
             "Я перестаю отвечать на несрочное. Спокойной ночи.",
             "Два часа ночи. Телефон в руках. Ты видишь проблему, или мне нарисовать диаграмму?",
+            "Спать. Немедленно.",
+            "Это не предложение.",
         ],
     },
     "food": [
@@ -3199,10 +3197,12 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send ART-voice sleep reminder with escalating levels.
+    """Send sleep reminder with escalating levels. No LLM — static phrases only.
 
     Scheduled at 01:05, 01:35, 02:05 — each triggers the appropriate level.
+    Uses curated phrases from REMINDERS["sleep"] to ensure correct tone per level.
     """
+    import random
     job = context.job
     chat_id = job.chat_id
 
@@ -3213,11 +3213,9 @@ async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     if level == 0:
         return
 
-    prompt = SLEEP_PROMPTS.get(level, SLEEP_PROMPTS[1])
-
     try:
-        response = await get_llm_response(prompt, mode="geek", max_tokens=300, skip_context=True)
-        await context.bot.send_message(chat_id=chat_id, text=response)
+        msg = random.choice(REMINDERS["sleep"][level])
+        await context.bot.send_message(chat_id=chat_id, text=msg)
         logger.info(f"Sleep reminder level {level} sent to {chat_id}")
     except Exception as e:
         logger.error(f"Sleep reminder error: {e}")
