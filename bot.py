@@ -1832,12 +1832,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         motivations = get_motivations_for_mode(mode, sleep_hours, strain, recovery)
 
         # Build data summary for LLM
-        data_summary = f"""Recovery: {recovery}%
+        color = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
+        data_summary = f"""Recovery: {recovery}% ({color})
 Сон: {sleep_hours}h
 Strain вчера: {strain}
-Тренд: {trend} ({prev_avg}% → {recovery}%)
-Самочувствие: {feeling}
-Режим мотивации: {mode}"""
+Тренд: {trend} ({prev_avg}% → {recovery}%)"""
 
         feeling_text = {
             "great": "отлично",
@@ -1849,17 +1848,18 @@ Strain вчера: {strain}
         prompt = f"""Данные WHOOP:
 {data_summary}
 
-Human ответила на вопрос "как себя чувствуешь?": "{feeling_text}".
+Human ответила "как себя чувствуешь?": "{feeling_text}".
 
 Ты — Geek (ART из Murderbot Diaries). Дай мотивацию на день.
 
-ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные):
+ОБЯЗАТЕЛЬНО ИСПОЛЬЗУЙ 1-2 из этих фраз (подставь реальные числа):
 {motivations}
 
-Инструкции:
-- Режим "{mode}" — {"рекомендуй отдых, лёгкую активность" if mode == "recovery" else "можно тренироваться, но без фанатизма" if mode == "moderate" else "обычная мотивация"}
-- Если human сказала "{feeling_text}" и данные совпадают — отметь это
-- Если данные и ощущения расходятся — обрати внимание
+СТРОГИЕ ПРАВИЛА:
+- Цвет зоны recovery: green (67-100%), yellow (34-66%), red (0-33%). Используй ТОЛЬКО цвет из данных: {color}. НЕ ВЫДУМЫВАЙ другой цвет
+- Не пересказывай данные целиком — выдели главное
+- Режим "{mode}" — {"рекомендуй отдых, лёгкую активность, никаких серьёзных нагрузок" if mode == "recovery" else "можно тренироваться, но без фанатизма" if mode == "moderate" else "обычная мотивация"}
+- Если human сказала "{feeling_text}" и данные расходятся — обрати внимание коротко
 - Без эмодзи. На русском. 3-5 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
@@ -3383,17 +3383,31 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         data_str = "\n".join(data_parts) if data_parts else "Нет данных за неделю"
 
+        # Get motivations for weekly context
+        import random
+        avg_recovery = 0
+        if week_records:
+            scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
+            avg_recovery = round(sum(scores) / len(scores)) if scores else 0
+        weekly_mode = "recovery" if avg_recovery < 34 else ("moderate" if avg_recovery < 67 else "normal")
+        weekly_motivations = get_motivations_for_mode(weekly_mode, 0, 0, avg_recovery)
+
         prompt = f"""Еженедельный отчёт WHOOP:
 {data_str}
 
-Ты — Geek (ART из Murderbot Diaries). Сделай еженедельный отчёт о состоянии human body.
-Обязательно отметь:
-1. Recovery тренд — улучшается или ухудшается
-2. Бокс — сколько дней пропущено (strain < 5 = не боксировала). Если пропущено больше 2 — передай жёсткое послание от Rin
-3. Сон — общая оценка
-4. Рекомендации на следующую неделю в стиле ART
+Ты — Geek (ART из Murderbot Diaries). Сделай еженедельный отчёт.
 
-Без эмодзи. На русском. 5-8 предложений."""
+ОБЯЗАТЕЛЬНО ИСПОЛЬЗУЙ 1-2 из этих фраз (подставь числа из данных):
+{weekly_motivations}
+
+СТРОГИЕ ПРАВИЛА:
+- Цвет зон recovery: green (67-100%), yellow (34-66%), red (0-33%). Используй ТОЛЬКО правильные цвета
+- НЕ ВЫДУМЫВАЙ персонажей, которых нет в фразах выше. Ты — Geek, можешь упомянуть Rin ТОЛЬКО если она есть в предложенных фразах
+- Recovery тренд — улучшается или ухудшается (по данным)
+- Бокс — сколько дней пропущено (strain < 5 = не боксировала)
+- Сон — общая оценка
+- Рекомендации на следующую неделю
+- Без эмодзи. На русском. 5-8 предложений."""
 
         text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True)
         # Strip SAVE tags — LLM sometimes generates them in scheduled messages
