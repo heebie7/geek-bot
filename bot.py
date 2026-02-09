@@ -17,9 +17,11 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    TypeHandler,
     ContextTypes,
     filters,
 )
@@ -37,6 +39,10 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Список разрешённых user_id (пустой = доступ для всех)
+_allowed_ids_raw = os.getenv("ALLOWED_USER_IDS", "")
+ALLOWED_USER_IDS = {int(uid.strip()) for uid in _allowed_ids_raw.split(",") if uid.strip()}
 
 # Timezone
 TZ = ZoneInfo("Asia/Tbilisi")
@@ -56,6 +62,18 @@ if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 else:
     openai_client = None
+
+
+async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Middleware: блокировать неразрешённых пользователей."""
+    if not ALLOWED_USER_IDS:
+        return
+    if not update.effective_user:
+        return
+    if update.effective_user.id not in ALLOWED_USER_IDS:
+        logger.warning(f"Unauthorized access attempt from user_id={update.effective_user.id}")
+        raise ApplicationHandlerStop()
+
 
 # === ПРОМПТЫ ===
 
@@ -3861,6 +3879,9 @@ def main() -> None:
     """Запуск бота."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.post_init = set_bot_commands
+
+    # Проверка доступа — блокирует всех кроме разрешённых user_id
+    application.add_handler(TypeHandler(Update, check_access), group=-1)
 
     # Команды
     application.add_handler(CommandHandler("start", start))
