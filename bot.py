@@ -2747,6 +2747,139 @@ async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("\n".join(lines))
 
 
+def _recurrence_matches_today(recurrence_text: str) -> bool:
+    """Проверяет, совпадает ли 🔁 правило с сегодняшним днём.
+
+    Поддерживает форматы Obsidian Tasks:
+      every day
+      every week / every week on Monday
+      every month / every month on the 15th
+      every <N> days / every <N> weeks / every <N> months
+    """
+    text = recurrence_text.lower().strip()
+    now = datetime.now(TZ)
+    weekday = now.weekday()  # 0=Mon, 6=Sun
+    day_of_month = now.day
+
+    day_map = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+    }
+
+    if text == "every day":
+        return True
+
+    # "every week on Monday" или "every week on Monday, Wednesday"
+    m = re.match(r'every\s+(?:(\d+)\s+)?weeks?\s+on\s+(.+)', text)
+    if m:
+        # Простой случай: пропускаем интервал (every 2 weeks) — шлём каждую неделю,
+        # потому что без даты начала невозможно точно вычислить
+        days_str = m.group(2)
+        for day_name, day_num in day_map.items():
+            if day_name in days_str and weekday == day_num:
+                return True
+        return False
+
+    # "every week" (без указания дня — напоминаем в понедельник)
+    if re.match(r'every\s+(?:\d+\s+)?weeks?$', text):
+        return weekday == 0
+
+    # "every month on the 15th" / "every month on the 1st"
+    m = re.match(r'every\s+(?:\d+\s+)?months?\s+on\s+the\s+(\d+)', text)
+    if m:
+        return day_of_month == int(m.group(1))
+
+    # "every month" (без даты — напоминаем 1-го числа)
+    if re.match(r'every\s+(?:\d+\s+)?months?$', text):
+        return day_of_month == 1
+
+    # "every <N> days" — шлём каждый день (без даты начала нельзя точнее)
+    if re.match(r'every\s+\d+\s+days?$', text):
+        return True
+
+    return False
+
+
+async def check_task_deadlines(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Проверяет tasks.md на дедлайны и повторяющиеся задачи. Запускается утром."""
+    try:
+        content = get_life_tasks()
+        if not content:
+            return
+
+        now = datetime.now(TZ)
+        today = now.strftime("%Y-%m-%d")
+
+        overdue = []
+        due_today = []
+        recurring_today = []
+
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if not stripped.startswith("- [ ]"):
+                continue
+            task_text = stripped[6:]
+
+            # Убираем эмодзи приоритетов для читаемости
+            display = task_text
+            for emoji in ["⏫", "🔺", "🔼", "🔽"]:
+                display = display.replace(emoji, "")
+
+            # Проверка дедлайна 📅
+            due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
+            if due_match:
+                due_date = due_match.group(1)
+                clean = re.sub(r'📅\s*\d{4}-\d{2}-\d{2}', '', display).strip()
+                if due_date < today:
+                    overdue.append((due_date, clean))
+                elif due_date == today:
+                    due_today.append(clean)
+                continue  # задача с дедлайном — не проверяем рекурсию
+
+            # Проверка рекурсии 🔁
+            rec_match = re.search(r'🔁\s*(.+?)(?:\s*$)', task_text)
+            if rec_match:
+                rule = rec_match.group(1).strip()
+                if _recurrence_matches_today(rule):
+                    clean = re.sub(r'🔁\s*.+', '', display).strip()
+                    recurring_today.append(clean)
+
+        if not overdue and not due_today and not recurring_today:
+            return
+
+        lines = []
+
+        if overdue:
+            lines.append("🔴 *Просрочено:*")
+            for date, task in sorted(overdue):
+                lines.append(f"• {task} _(было {date})_")
+
+        if due_today:
+            if lines:
+                lines.append("")
+            lines.append("🟡 *Дедлайн сегодня:*")
+            for task in due_today:
+                lines.append(f"• {task}")
+
+        if recurring_today:
+            if lines:
+                lines.append("")
+            lines.append("🔁 *Повторяющиеся:*")
+            for task in recurring_today:
+                lines.append(f"• {task}")
+
+        header = f"📋 *Задачи на {now.strftime('%d.%m')}*\n"
+        chat_id = context.job.chat_id
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=header + "\n".join(lines),
+            parse_mode="Markdown"
+        )
+        logger.info(f"Deadline check: {len(overdue)} overdue, {len(due_today)} today, {len(recurring_today)} recurring")
+    except Exception as e:
+        logger.error(f"Failed to check task deadlines: {e}")
+
+
 async def check_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Проверить и отправить напоминания (вызывается по таймеру)."""
     due = get_due_reminders()
@@ -3789,7 +3922,14 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"monday_review_{OWNER_CHAT_ID}",
     )
-    logger.info(f"WHOOP and Monday review jobs scheduled for owner {OWNER_CHAT_ID}")
+    # Утренняя проверка дедлайнов и повторяющихся задач — 9:00
+    job_queue.run_daily(
+        check_task_deadlines,
+        time=time(hour=9, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"task_deadlines_{OWNER_CHAT_ID}",
+    )
+    logger.info(f"WHOOP, Monday review, and task deadline jobs scheduled for owner {OWNER_CHAT_ID}")
 
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))
