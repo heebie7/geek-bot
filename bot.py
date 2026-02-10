@@ -32,6 +32,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from github import Github
 from whoop import whoop_client
+from meal_data import generate_weekly_menu
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -1380,9 +1381,18 @@ def get_reply_keyboard():
     keyboard = [
         [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Steps")],
         [KeyboardButton("📅 Week"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
-        [KeyboardButton("➕ Add"), KeyboardButton("📝 Note")],
+        [KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def get_add_keyboard():
+    """Inline keyboard для выбора: Task или Note."""
+    keyboard = [[
+        InlineKeyboardButton("📋 Task", callback_data="add_task"),
+        InlineKeyboardButton("📝 Note", callback_data="add_note"),
+    ]]
+    return InlineKeyboardMarkup(keyboard)
 
 
 def get_note_mode_keyboard():
@@ -1589,8 +1599,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text(msg)
 
     elif data == "food":
-        msg = random.choice(REMINDERS["food"])
-        await query.message.reply_text(msg)
+        menu = generate_weekly_menu()
+        await query.message.reply_text(menu, parse_mode="HTML")
 
     elif data == "sport":
         msg = random.choice(REMINDERS["sport"])
@@ -1635,6 +1645,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         else:
             await query.message.reply_text(response)
+
+    # === Add menu ===
+    elif data == "add_task":
+        context.user_data["add_mode"] = True
+        await query.edit_message_text("Напиши задачу или список задач (каждая с новой строки).")
+
+    elif data == "add_note":
+        context.user_data["note_mode"] = True
+        context.user_data["note_buffer"] = []
+        await query.edit_message_text(
+            "Режим заметки. Пересылай сообщения или пиши текст.\n"
+            "Когда закончишь — нажми Готово.",
+        )
+        await query.message.reply_text("Жду сообщений.", reply_markup=get_note_mode_keyboard())
 
     # === Note mode ===
     elif data == "note_cancel":
@@ -2707,11 +2731,10 @@ async def sleep_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(msg)
 
 
-async def food_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /food."""
-    import random
-    msg = random.choice(REMINDERS["food"])
-    await update.message.reply_text(msg)
+async def food_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /food — меню на неделю."""
+    menu = generate_weekly_menu()
+    await update.message.reply_text(menu, parse_mode="HTML")
 
 
 async def sport_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3028,19 +3051,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await next_steps_command(update, context)
         return
     elif user_message == "➕ Add":
-        context.user_data["add_mode"] = True
         await update.message.reply_text(
-            "Напиши задачу или список задач (каждая с новой строки).",
-            reply_markup=get_reply_keyboard()
-        )
-        return
-    elif user_message == "📝 Note":
-        context.user_data["note_mode"] = True
-        context.user_data["note_buffer"] = []
-        await update.message.reply_text(
-            "Режим заметки. Пересылай сообщения или пиши текст.\n"
-            "Когда закончишь — нажми Готово.",
-            reply_markup=get_note_mode_keyboard()
+            "Что добавить?",
+            reply_markup=get_add_keyboard()
         )
         return
     elif user_message == "🧘 Sensory":
@@ -4007,7 +4020,7 @@ def main() -> None:
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("sleep", sleep_reminder))
-    application.add_handler(CommandHandler("food", food_reminder))
+    application.add_handler(CommandHandler("food", food_command))
     application.add_handler(CommandHandler("sport", sport_reminder))
     application.add_handler(CommandHandler("reminders", setup_reminders))
     application.add_handler(CommandHandler("stop_reminders", stop_reminders))
