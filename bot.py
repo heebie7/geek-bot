@@ -1695,7 +1695,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 {raw_text}"""
 
         result = await get_llm_response(
-            note_prompt, mode="leya", skip_context=True,
+            note_prompt, mode="leya", skip_context=True, max_tokens=4000,
             custom_system="Ты помощник для создания заметок. Цитируй сообщения дословно. Не перефразируй и не добавляй ничего от себя."
         )
 
