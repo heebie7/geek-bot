@@ -1380,9 +1380,18 @@ def get_reply_keyboard():
     keyboard = [
         [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Steps")],
         [KeyboardButton("📅 Week"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
-        [KeyboardButton("➕ Add")],
+        [KeyboardButton("➕ Add"), KeyboardButton("📝 Note")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def get_note_mode_keyboard():
+    """Inline keyboard для режима заметки."""
+    keyboard = [[
+        InlineKeyboardButton("✅ Готово", callback_data="note_done"),
+        InlineKeyboardButton("❌ Отмена", callback_data="note_cancel"),
+    ]]
+    return InlineKeyboardMarkup(keyboard)
 
 
 def get_sensory_keyboard():
@@ -1626,6 +1635,53 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         else:
             await query.message.reply_text(response)
+
+    # === Note mode ===
+    elif data == "note_cancel":
+        context.user_data.pop("note_mode", None)
+        context.user_data.pop("note_buffer", None)
+        await query.edit_message_text("Заметка отменена.")
+
+    elif data == "note_done":
+        buffer = context.user_data.get("note_buffer", [])
+        context.user_data.pop("note_mode", None)
+
+        if not buffer:
+            context.user_data.pop("note_buffer", None)
+            await query.edit_message_text("Буфер пустой, нечего сохранять.")
+            return
+
+        raw_text = "\n\n".join(buffer)
+        await query.edit_message_text("Собираю заметку...")
+
+        # LLM собирает чистую заметку из буфера
+        note_prompt = f"""Из пересланных сообщений ниже создай структурированную заметку.
+
+Правила:
+- Первая строка: короткий заголовок (без #, без кавычек)
+- Дальше: содержание заметки, объединяя фрагменты в связный текст
+- Убери дубли, оставь суть
+- Язык: такой же как в сообщениях
+- Не добавляй ничего от себя, только переструктурируй
+
+Сообщения:
+{raw_text}"""
+
+        result = await get_llm_response(
+            note_prompt, mode="leya", skip_context=True,
+            custom_system="Ты помощник для создания заметок. Ответь только заметкой, ничего лишнего."
+        )
+
+        # Парсим: первая строка = заголовок, остальное = тело
+        lines = result.strip().split("\n", 1)
+        title = lines[0].lstrip("# ").strip()
+        body = lines[1].strip() if len(lines) > 1 else ""
+
+        context.user_data.pop("note_buffer", None)
+        if create_rawnote(title, body):
+            await query.message.reply_text(f"Заметка сохранена: {title}")
+        else:
+            await query.message.reply_text("Ошибка сохранения. Попробуй позже.")
 
     # === Обработка сохранения задач/заметок ===
     elif data == "save_confirm":
@@ -2939,6 +2995,20 @@ def parse_save_tag(response: str) -> tuple:
     return (response, None, None, None)
 
 
+async def handle_photo_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка фото в режиме заметки."""
+    if not context.user_data.get("note_mode"):
+        return
+    caption = update.message.caption or "[фото без подписи]"
+    buffer = context.user_data.get("note_buffer", [])
+    buffer.append(f"[фото]: {caption}")
+    context.user_data["note_buffer"] = buffer
+    await update.message.reply_text(
+        f"✓ ({len(buffer)}). Пересылай ещё или нажми Готово.",
+        reply_markup=get_note_mode_keyboard()
+    )
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка текстовых сообщений."""
     user_message = update.message.text
@@ -2964,6 +3034,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=get_reply_keyboard()
         )
         return
+    elif user_message == "📝 Note":
+        context.user_data["note_mode"] = True
+        context.user_data["note_buffer"] = []
+        await update.message.reply_text(
+            "Режим заметки. Пересылай сообщения или пиши текст.\n"
+            "Когда закончишь — нажми Готово.",
+            reply_markup=get_note_mode_keyboard()
+        )
+        return
     elif user_message == "🧘 Sensory":
         await update.message.reply_text(
             "Что сейчас происходит?",
@@ -2982,6 +3061,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             stats_msg += f"{emoji} {cat.capitalize()}: {count}x\n"
         stats_msg += f"\nВсего: {total} отметок\n\nЧто было сейчас?"
         await update.message.reply_text(stats_msg, reply_markup=get_joy_keyboard())
+        return
+
+    # Note mode: собираем сообщения в буфер
+    if context.user_data.get("note_mode"):
+        buffer = context.user_data.get("note_buffer", [])
+
+        # Определяем источник (пересланное или своё)
+        fwd = getattr(update.message, 'forward_origin', None) or update.message.forward_date
+        if fwd:
+            sender = ""
+            origin = getattr(update.message, 'forward_origin', None)
+            if origin:
+                sender_user = getattr(origin, 'sender_user', None)
+                if sender_user:
+                    sender = sender_user.first_name
+                else:
+                    sender_name = getattr(origin, 'sender_user_name', None)
+                    if sender_name:
+                        sender = sender_name
+            prefix = f"[{sender}]: " if sender else "[forwarded]: "
+        else:
+            prefix = ""
+
+        text = update.message.text or update.message.caption or ""
+        if text:
+            buffer.append(prefix + text)
+            context.user_data["note_buffer"] = buffer
+            await update.message.reply_text(
+                f"✓ ({len(buffer)}). Пересылай ещё или нажми Готово.",
+                reply_markup=get_note_mode_keyboard()
+            )
         return
 
     # Check for pending joy free text input
@@ -3954,6 +4064,9 @@ def main() -> None:
 
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))
+
+    # Обработка фото (для режима заметки)
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo_note))
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
