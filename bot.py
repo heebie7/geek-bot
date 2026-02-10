@@ -3026,10 +3026,11 @@ async def handle_photo_note(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     buffer = context.user_data.get("note_buffer", [])
     buffer.append(f"[фото]: {caption}")
     context.user_data["note_buffer"] = buffer
-    await update.message.reply_text(
-        f"✓ ({len(buffer)}). Пересылай ещё или нажми Готово.",
-        reply_markup=get_note_mode_keyboard()
-    )
+    try:
+        from telegram import ReactionTypeEmoji
+        await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
+    except Exception:
+        pass
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3050,7 +3051,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif user_message == "🎯 Steps":
         await next_steps_command(update, context)
         return
-    elif user_message == "➕ Add":
+    elif user_message in ("➕ Add", "📝 Note"):
         await update.message.reply_text(
             "Что добавить?",
             reply_markup=get_add_keyboard()
@@ -3101,10 +3102,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if text:
             buffer.append(prefix + text)
             context.user_data["note_buffer"] = buffer
-            await update.message.reply_text(
-                f"✓ ({len(buffer)}). Пересылай ещё или нажми Готово.",
-                reply_markup=get_note_mode_keyboard()
-            )
+
+            # Тихий сбор: реакция вместо ответа
+            try:
+                from telegram import ReactionTypeEmoji
+                await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
+            except Exception:
+                pass
         return
 
     # Check for pending joy free text input
