@@ -1,6 +1,7 @@
 import io
 import re
 import csv as csv_module
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -46,41 +47,58 @@ def extract_year_from_csv(content: str) -> str:
 
 async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка загрузки CSV файлов."""
-    document = update.message.document
-    if not document:
-        return
-
-    filename = document.file_name or ""
-    if not filename.lower().endswith('.csv'):
-        return
-
-    logger.info(f"CSV upload received: {filename}")
-
     try:
-        file = await document.get_file()
-        file_bytes = await file.download_as_bytearray()
-        content = bytes(file_bytes).decode('utf-8')
-    except Exception as e:
-        logger.error(f"CSV download error: {e}")
-        await update.message.reply_text("Ошибка при скачивании файла.")
-        return
+        if not update.message:
+            logger.debug("CSV handler: no message in update")
+            return
 
-    csv_type = detect_csv_type(filename, content)
-    if not csv_type:
-        await update.message.reply_text(
-            "Не могу определить тип CSV.\n"
-            "Имя файла должно начинаться с zen* или pp*/paypal*/Download*,\n"
-            "или файл должен содержать заголовки Zen Money / PayPal."
+        document = update.message.document
+        if not document:
+            logger.debug("CSV handler: no document in message")
+            return
+
+        filename = document.file_name or ""
+        if not filename.lower().endswith('.csv'):
+            logger.debug(f"CSV handler: file '{filename}' is not .csv, skipping")
+            return
+
+        logger.info(f"CSV upload received: {filename}")
+
+        try:
+            file = await document.get_file()
+            file_bytes = await file.download_as_bytearray()
+            content = bytes(file_bytes).decode('utf-8')
+        except Exception as e:
+            logger.error(f"CSV download error: {e}")
+            await update.message.reply_text("Ошибка при скачивании файла.")
+            return
+
+        csv_type = detect_csv_type(filename, content)
+        if not csv_type:
+            await update.message.reply_text(
+                "Не могу определить тип CSV.\n"
+                "Имя файла должно начинаться с zen* или pp*/paypal*/Download*,\n"
+                "или файл должен содержать заголовки Zen Money / PayPal."
+            )
+            return
+
+        year = extract_year_from_csv(content)
+        github_path = f"finance/raw/{year}/{filename}"
+
+        result = await asyncio.to_thread(
+            save_writing_file, github_path, content, f"Upload {csv_type} CSV: {filename}"
         )
-        return
+        if result:
+            await update.message.reply_text(f"✓ Сохранил {filename} → finance/raw/{year}/ ({csv_type})")
+        else:
+            await update.message.reply_text("Ошибка сохранения. Проверь GitHub токен.")
 
-    year = extract_year_from_csv(content)
-    github_path = f"finance/raw/{year}/{filename}"
-
-    if save_writing_file(github_path, content, f"Upload {csv_type} CSV: {filename}"):
-        await update.message.reply_text(f"✓ Сохранил {filename} → finance/raw/{year}/ ({csv_type})")
-    else:
-        await update.message.reply_text("Ошибка сохранения. Проверь GitHub токен.")
+    except Exception as e:
+        logger.error(f"CSV handler unexpected error: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("Ошибка обработки CSV файла.")
+        except Exception:
+            pass
 
 
 async def income_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
