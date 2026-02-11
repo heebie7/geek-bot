@@ -75,9 +75,11 @@ from meal_data import generate_weekly_menu
 
 async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Middleware: блокировать неразрешённых пользователей."""
-    # Диагностика: логировать document-апдейты
+    # Диагностика: прямой вызов CSV handler для document-апдейтов
     if update.message and update.message.document:
-        logger.info(f"[DIAG] Document update received: {update.message.document.file_name}")
+        fname = update.message.document.file_name or ""
+        logger.info(f"[DIAG] Document received: {fname}, calling handle_csv_upload directly")
+        await handle_csv_upload(update, context)
 
     if not ALLOWED_USER_IDS:
         return
@@ -923,6 +925,7 @@ def main() -> None:
 
     # Обработка CSV файлов
     application.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
+    logger.info(f"[DIAG] Document handler registered, function={handle_csv_upload.__name__}")
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
