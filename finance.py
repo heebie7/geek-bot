@@ -47,7 +47,6 @@ def extract_year_from_csv(content: str) -> str:
 
 async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка загрузки CSV файлов."""
-    logger.info("[DIAG] handle_csv_upload ENTERED")
     try:
         if not update.message:
             logger.debug("CSV handler: no message in update")
