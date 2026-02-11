@@ -75,6 +75,10 @@ from meal_data import generate_weekly_menu
 
 async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Middleware: блокировать неразрешённых пользователей."""
+    # Диагностика: логировать document-апдейты
+    if update.message and update.message.document:
+        logger.info(f"[DIAG] Document update received: {update.message.document.file_name}")
+
     if not ALLOWED_USER_IDS:
         return
     if not update.effective_user:
