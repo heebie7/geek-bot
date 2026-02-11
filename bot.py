@@ -4031,13 +4031,21 @@ async def set_bot_commands(application) -> None:
 
 # === FINANCE: CSV upload + /income ===
 
-def detect_csv_type(filename: str) -> str | None:
-    """Определить тип CSV по имени файла."""
+def detect_csv_type(filename: str, content: str = "") -> str | None:
+    """Определить тип CSV по имени файла или по содержимому."""
     name = filename.lower()
+    # По имени файла
     if name.startswith("zen") or "zenmoney" in name:
         return "zenmoney"
     if name.startswith("pp") or name.startswith("paypal") or name.startswith("download"):
         return "paypal"
+    # По содержимому (заголовки CSV)
+    if content:
+        first_line = content.strip().split('\n')[0].lower()
+        if "категория" in first_line or "category_name" in first_line:
+            return "zenmoney"
+        if "brutto" in first_line or "gross" in first_line or "paypal" in first_line:
+            return "paypal"
     return None
 
 
@@ -4069,14 +4077,7 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not filename.lower().endswith('.csv'):
         return
 
-    csv_type = detect_csv_type(filename)
-    if not csv_type:
-        await update.message.reply_text(
-            "Не могу определить тип CSV.\n"
-            "Имя файла должно начинаться с zen* (Zen Money) "
-            "или pp*/paypal*/Download* (PayPal)."
-        )
-        return
+    logger.info(f"CSV upload received: {filename}")
 
     try:
         file = await document.get_file()
@@ -4087,11 +4088,20 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Ошибка при скачивании файла.")
         return
 
+    csv_type = detect_csv_type(filename, content)
+    if not csv_type:
+        await update.message.reply_text(
+            "Не могу определить тип CSV.\n"
+            "Имя файла должно начинаться с zen* или pp*/paypal*/Download*,\n"
+            "или файл должен содержать заголовки Zen Money / PayPal."
+        )
+        return
+
     year = extract_year_from_csv(content)
     github_path = f"finance/raw/{year}/{filename}"
 
     if save_writing_file(github_path, content, f"Upload {csv_type} CSV: {filename}"):
-        await update.message.reply_text(f"Сохранил {filename} в finance/raw/{year}/")
+        await update.message.reply_text(f"✓ Сохранил {filename} → finance/raw/{year}/ ({csv_type})")
     else:
         await update.message.reply_text("Ошибка сохранения. Проверь GitHub токен.")
 
