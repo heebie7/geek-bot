@@ -49,8 +49,15 @@ def _download_raw_files(year: str) -> dict:
 
         content = get_writing_file(path)
         if content:
-            raw[source] = content
-            logger.info(f"Downloaded {source}: {name} ({len(content)} bytes)")
+            if source in raw:
+                # Уже есть данные этого источника — дописываем строки (без заголовка)
+                lines = content.split('\n', 1)
+                if len(lines) > 1:
+                    raw[source] += '\n' + lines[1]
+                logger.info(f"Appended {source}: {name} ({len(content)} bytes)")
+            else:
+                raw[source] = content
+                logger.info(f"Downloaded {source}: {name} ({len(content)} bytes)")
 
     return raw
 
