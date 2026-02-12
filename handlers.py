@@ -1242,27 +1242,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         buffer = context.user_data.get("note_buffer", [])
         logger.info(f"Note mode: received message, buffer size before={len(buffer)}")
 
-        # Определяем источник (пересланное или своё)
-        fwd = getattr(update.message, 'forward_origin', None) or update.message.forward_date
-        if fwd:
-            sender = ""
-            origin = getattr(update.message, 'forward_origin', None)
-            if origin:
-                sender_user = getattr(origin, 'sender_user', None)
-                if sender_user:
-                    sender = sender_user.first_name
-                else:
-                    sender_name = getattr(origin, 'sender_user_name', None)
-                    if sender_name:
-                        sender = sender_name
-            prefix = f"[{sender}]: " if sender else "[forwarded]: "
-        else:
-            prefix = ""
-
         text = update.message.text or update.message.caption or ""
         if text:
-            full_text = prefix + text
-            buffer.append(full_text)
+            buffer.append(text)
             context.user_data["note_buffer"] = buffer
             logger.info(f"Note mode: added message to buffer, size after={len(buffer)}")
 
