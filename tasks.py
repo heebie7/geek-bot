@@ -133,11 +133,11 @@ async def suggest_zone_for_task(task: str) -> str:
 
 
 def create_rawnote(title: str, content: str) -> bool:
-    """Создать заметку в rawnotes/."""
+    """Создать заметку в writing/rawnotes/."""
     today = datetime.now(TZ).strftime("%Y-%m-%d")
     # Создаём slug из заголовка
     slug = title.lower().replace(" ", "-")[:50]
-    filename = f"rawnotes/{today}-{slug}.md"
+    filename = f"writing/rawnotes/{today}-{slug}.md"
 
     note_content = f"# {title}\n\n{content}"
     return save_writing_file(filename, note_content, f"Add note: {title[:30]}")
