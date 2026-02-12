@@ -579,7 +579,7 @@ def find_raw_files(year):
         name = f.name.lower()
         if name.startswith("zen") and name.endswith(".csv"):
             files["zen"] = f
-        elif (name.startswith("pp") or name.startswith("paypal")) and name.endswith(".csv"):
+        elif (name.startswith("pp") or name.startswith("paypal") or name.startswith("download")) and name.endswith(".csv"):
             files["paypal"] = f
         elif name.startswith("wolt") and name.endswith(".csv"):
             files["wolt"] = f
