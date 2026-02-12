@@ -130,11 +130,7 @@ def process_period(period: str) -> str:
         all_rows.extend(zen_rows)
 
     if "paypal" in raw_files:
-        # Debug: показать первые строки для диагностики
-        preview_lines = raw_files["paypal"][:500].replace('\r', '')
-        logger.info(f"PayPal CSV preview (period={period}): {preview_lines}")
         pp_rows = parse_paypal(io.StringIO(raw_files["paypal"]), categories, period)
-        logger.info(f"PayPal parsed: {len(pp_rows)} rows for period {period}")
         stats.append(f"PayPal: {len(pp_rows)}")
         all_rows.extend(pp_rows)
 

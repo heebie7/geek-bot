@@ -314,29 +314,45 @@ def parse_paypal(filepath, categories, target_period):
 
     with _open_source(filepath, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
+        # Автодетект формата: "Type" (2026 EU) vs "Description" (2025 US)
+        fields = reader.fieldnames or []
+        is_eu_format = "Type" in fields and "Description" not in fields
+        type_col = "Type" if is_eu_format else "Description"
+        date_fmt = "%d/%m/%Y" if is_eu_format else "%m/%d/%Y"
+
         for row in reader:
-            description = row.get("Description", "").strip().strip('"')
+            description = row.get(type_col, "").strip().strip('"')
 
             # Пропускаем конвертации и холды
             if description in types_ignore:
                 continue
 
-            # Парсим дату (формат M/D/YYYY)
+            # Парсим дату
             date_raw = row.get("Date", "").strip().strip('"')
             if not date_raw:
                 continue
             try:
-                dt = datetime.strptime(date_raw, "%m/%d/%Y")
-                date_str = dt.strftime("%Y-%m-%d")
+                dt = datetime.strptime(date_raw, date_fmt)
             except ValueError:
-                continue
+                # Fallback: пробуем альтернативный формат
+                alt_fmt = "%m/%d/%Y" if is_eu_format else "%d/%m/%Y"
+                try:
+                    dt = datetime.strptime(date_raw, alt_fmt)
+                except ValueError:
+                    continue
+            date_str = dt.strftime("%Y-%m-%d")
 
             # Фильтр по периоду
             if not date_str.startswith(target_period):
                 continue
 
             currency = row.get("Currency", "").strip().strip('"')
-            gross_str = row.get("Gross", "0").strip().strip('"').replace(",", "")
+            gross_str = row.get("Gross", "0").strip().strip('"')
+            # Поддержка EU формата: "-8,00" → "-8.00"
+            if "." not in gross_str and "," in gross_str:
+                gross_str = gross_str.replace(",", ".")
+            else:
+                gross_str = gross_str.replace(",", "")
             name = row.get("Name", "").strip().strip('"')
 
             try:
