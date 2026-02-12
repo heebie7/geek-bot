@@ -243,6 +243,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("Буфер пустой, нечего сохранять.")
             return
 
+        logger.info(f"Note: Creating note from {len(buffer)} messages")
         raw_text = "\n\n".join(buffer)
         await query.edit_message_text("Собираю заметку...")
 
@@ -268,8 +269,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         title = lines[0].lstrip("# ").strip()
         body = lines[1].strip() if len(lines) > 1 else ""
 
+        logger.info(f"Note: title='{title[:30]}...', body_len={len(body)}")
         context.user_data.pop("note_buffer", None)
-        if create_rawnote(title, body):
+        success = create_rawnote(title, body)
+        logger.info(f"Note: save result={success}")
+
+        if success:
             await query.message.reply_text(f"Заметка сохранена: {title}")
         else:
             await query.message.reply_text("Ошибка сохранения. Попробуй позже.")

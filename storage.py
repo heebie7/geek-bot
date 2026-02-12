@@ -119,23 +119,30 @@ def list_writing_dir(dirpath: str) -> dict:
 
 def save_writing_file(filepath: str, new_content: str, message: str) -> bool:
     """Сохранить/обновить файл в Writing-space репо."""
+    logger.info(f"save_writing_file: filepath={filepath}, msg='{message}'")
     if not GITHUB_TOKEN:
         logger.warning("No GitHub token, cannot save to Writing repo")
         return False
     try:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(WRITING_REPO)
+        logger.info(f"save_writing_file: Got repo {WRITING_REPO}")
         try:
             # Файл существует — обновляем
             content = repo.get_contents(filepath)
             repo.update_file(filepath, message, new_content, content.sha)
-        except:
+            logger.info(f"save_writing_file: Updated existing file {filepath}")
+        except Exception as e:
             # Файл не существует — создаём
+            logger.info(f"save_writing_file: File not found, creating new: {e}")
             repo.create_file(filepath, message, new_content)
+            logger.info(f"save_writing_file: Created new file {filepath}")
         logger.info(f"Saved {filepath} to Writing repo")
         return True
     except Exception as e:
         logger.error(f"Writing repo write error: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 
