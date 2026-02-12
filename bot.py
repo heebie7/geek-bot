@@ -66,7 +66,7 @@ from handlers import (
     whoop_weekly_summary, monday_review,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_photo_note, handle_message,
-    income_command, handle_csv_upload,
+    income_command, process_command, handle_csv_upload,
 )
 from meal_data import generate_weekly_menu
 
@@ -867,6 +867,7 @@ def main() -> None:
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
     application.add_handler(CommandHandler("myid", myid_command))
     application.add_handler(CommandHandler("income", income_command))
+    application.add_handler(CommandHandler("process", process_command))
 
     # Проверка пользовательских напоминаний каждую минуту
     job_queue = application.job_queue

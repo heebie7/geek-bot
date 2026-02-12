@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from config import TZ, logger, WRITING_REPO
 from storage import get_writing_file, save_writing_file
+from finance_processor import process_period
 
 
 def detect_csv_type(filename: str, content: str = "") -> str | None:
@@ -99,6 +100,30 @@ async def handle_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await update.message.reply_text("Ошибка обработки CSV файла.")
         except Exception:
             pass
+
+
+async def process_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /process [YYYY-MM] — обработать raw CSV в processed."""
+    now = datetime.now(TZ)
+
+    if context.args:
+        period = context.args[0]
+    else:
+        period = now.strftime("%Y-%m")
+
+    # Валидация формата
+    if not (len(period) == 7 and period[4] == "-") and not (len(period) == 4 and period.isdigit()):
+        await update.message.reply_text("Формат: /process YYYY-MM или /process YYYY\nПример: /process 2026-02")
+        return
+
+    await update.message.reply_text(f"Обрабатываю {period}...")
+
+    try:
+        result = await asyncio.to_thread(process_period, period)
+        await update.message.reply_text(result)
+    except Exception as e:
+        logger.error(f"Process command error: {e}", exc_info=True)
+        await update.message.reply_text(f"Ошибка обработки: {e}")
 
 
 async def income_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

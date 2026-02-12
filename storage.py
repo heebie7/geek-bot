@@ -89,6 +89,24 @@ def get_writing_file(filepath: str) -> str:
         return ""
 
 
+def list_writing_dir(dirpath: str) -> dict:
+    """Получить список файлов в директории Writing-space репо.
+    Возвращает dict {filename: filepath} или {} при ошибке."""
+    if not GITHUB_TOKEN:
+        logger.warning("No GITHUB_TOKEN for Writing repo")
+        return {}
+    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(WRITING_REPO)
+        contents = repo.get_contents(dirpath)
+        if not isinstance(contents, list):
+            return {}
+        return {item.name: item.path for item in contents if item.type == "file"}
+    except Exception as e:
+        logger.error(f"Writing repo list error for {dirpath}: {e}")
+        return {}
+
+
 def save_writing_file(filepath: str, new_content: str, message: str) -> bool:
     """Сохранить/обновить файл в Writing-space репо."""
     if not GITHUB_TOKEN:

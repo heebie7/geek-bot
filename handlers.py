@@ -48,7 +48,7 @@ from keyboards import (
     get_task_confirm_keyboard, get_destination_keyboard,
     get_priority_keyboard,
 )
-from finance import handle_csv_upload, income_command  # noqa: F401 — re-exported for bot.py
+from finance import handle_csv_upload, income_command, process_command  # noqa: F401 — re-exported for bot.py
 from whoop import whoop_client
 from meal_data import generate_weekly_menu
 
