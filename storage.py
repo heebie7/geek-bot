@@ -82,8 +82,18 @@ def get_writing_file(filepath: str) -> str:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(WRITING_REPO)
         content = repo.get_contents(filepath)
-        logger.info(f"Successfully read {filepath} ({len(content.decoded_content)} bytes)")
-        return content.decoded_content.decode('utf-8-sig')
+        if content.encoding == "none":
+            # Файл >1MB — get_contents не отдаёт содержимое, скачиваем через raw URL
+            import requests as _req
+            resp = _req.get(content.download_url,
+                            headers={"Authorization": f"token {GITHUB_TOKEN}"})
+            resp.raise_for_status()
+            text = resp.content.decode('utf-8-sig')
+            logger.info(f"Successfully read {filepath} via download_url ({len(resp.content)} bytes)")
+        else:
+            text = content.decoded_content.decode('utf-8-sig')
+            logger.info(f"Successfully read {filepath} ({len(content.decoded_content)} bytes)")
+        return text
     except Exception as e:
         logger.error(f"Writing repo read error for {filepath} from {WRITING_REPO}: {e}")
         return ""
