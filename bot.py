@@ -244,7 +244,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         logger.info(f"Note: Creating note from {len(buffer)} messages")
-        raw_text = "\n\n".join(buffer)
+        raw_text = "\n".join(buffer)
         await query.edit_message_text("Собираю заметку...")
 
         note_prompt = f"""Из пересланных сообщений ниже создай заметку.
@@ -254,7 +254,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 - Дальше: точное цитирование всех сообщений, каждое с новой строки
 - НЕ перефразируй, НЕ сокращай, НЕ объединяй, НЕ добавляй от себя
 - Сохрани оригинальный текст каждого сообщения дословно
-- Можно только: добавить заголовок и разделить сообщения пустыми строками
+- БЕЗ пустых строк между сообщениями
 - Язык: такой же как в сообщениях
 
 Сообщения:
