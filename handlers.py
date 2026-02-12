@@ -478,8 +478,8 @@ async def send_finance_csv_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
         "Суббота. Время финансовой отчётности.\n\n"
         "Экспортируй CSV из Zen Money и PayPal и скинь мне.\n"
         "Zen Money: Ещё → Экспорт → CSV.\n"
-        "PayPal: Activity → Download → CSV.\n\n"
-        "Я сохраню в репо и запущу обработку."
+        "PayPal: https://www.paypal.com/reports/dlog\n\n"
+        "Я сохраню в репо, потом /process для обработки."
     )
     await context.bot.send_message(chat_id=job.chat_id, text=msg)
 
