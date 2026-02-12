@@ -42,7 +42,7 @@ def get_github_file(filepath: str) -> str:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(GITHUB_REPO)
         content = repo.get_contents(filepath)
-        return content.decoded_content.decode('utf-8')
+        return content.decoded_content.decode('utf-8-sig')
     except Exception as e:
         logger.error(f"GitHub read error: {e}")
         return load_file(os.path.join(BASE_DIR, filepath), "Файл не найден.")
@@ -83,7 +83,7 @@ def get_writing_file(filepath: str) -> str:
         repo = g.get_repo(WRITING_REPO)
         content = repo.get_contents(filepath)
         logger.info(f"Successfully read {filepath} ({len(content.decoded_content)} bytes)")
-        return content.decoded_content.decode('utf-8')
+        return content.decoded_content.decode('utf-8-sig')
     except Exception as e:
         logger.error(f"Writing repo read error for {filepath} from {WRITING_REPO}: {e}")
         return ""
