@@ -1240,6 +1240,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Note mode: собираем сообщения в буфер
     if context.user_data.get("note_mode"):
         buffer = context.user_data.get("note_buffer", [])
+        logger.info(f"Note mode: received message, buffer size before={len(buffer)}")
 
         # Определяем источник (пересланное или своё)
         fwd = getattr(update.message, 'forward_origin', None) or update.message.forward_date
@@ -1260,8 +1261,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         text = update.message.text or update.message.caption or ""
         if text:
-            buffer.append(prefix + text)
+            full_text = prefix + text
+            buffer.append(full_text)
             context.user_data["note_buffer"] = buffer
+            logger.info(f"Note mode: added message to buffer, size after={len(buffer)}")
 
             # Тихий сбор: реакция вместо ответа
             try:
@@ -1269,6 +1272,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
             except Exception:
                 pass
+        else:
+            logger.warning(f"Note mode: received message with no text or caption")
         return
 
     # Check for pending joy free text input

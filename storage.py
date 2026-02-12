@@ -127,17 +127,32 @@ def save_writing_file(filepath: str, new_content: str, message: str) -> bool:
         g = Github(GITHUB_TOKEN)
         repo = g.get_repo(WRITING_REPO)
         logger.info(f"save_writing_file: Got repo {WRITING_REPO}")
+
+        file_exists = False
         try:
             # Файл существует — обновляем
             content = repo.get_contents(filepath)
-            repo.update_file(filepath, message, new_content, content.sha)
-            logger.info(f"save_writing_file: Updated existing file {filepath}")
-        except Exception as e:
-            # Файл не существует — создаём
-            logger.info(f"save_writing_file: File not found, creating new: {e}")
-            repo.create_file(filepath, message, new_content)
-            logger.info(f"save_writing_file: Created new file {filepath}")
-        logger.info(f"Saved {filepath} to Writing repo")
+            file_exists = True
+            logger.info(f"save_writing_file: File exists, updating {filepath}")
+        except Exception as check_e:
+            logger.info(f"save_writing_file: File not found ({check_e.__class__.__name__}), will create")
+
+        if file_exists:
+            try:
+                repo.update_file(filepath, message, new_content, content.sha)
+                logger.info(f"save_writing_file: Successfully updated {filepath}")
+            except Exception as e:
+                logger.error(f"save_writing_file: Failed to update {filepath}: {e}")
+                raise
+        else:
+            try:
+                repo.create_file(filepath, message, new_content)
+                logger.info(f"save_writing_file: Successfully created new file {filepath}")
+            except Exception as e:
+                logger.error(f"save_writing_file: Failed to create {filepath}: {e}")
+                raise
+
+        logger.info(f"Saved {filepath} to Writing repo successfully")
         return True
     except Exception as e:
         logger.error(f"Writing repo write error: {e}")
