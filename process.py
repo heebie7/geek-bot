@@ -591,16 +591,34 @@ def find_raw_files(year):
         return {}
 
     files = {}
+    zen_candidates = []
+    wolt_candidates = []
     for f in year_dir.iterdir():
         name = f.name.lower()
         if name.startswith("zen") and name.endswith(".csv"):
-            files["zen"] = f
+            zen_candidates.append(f)
         elif (name.startswith("pp") or name.startswith("paypal") or name.startswith("download")) and name.endswith(".csv"):
             files["paypal"] = f
         elif name.startswith("wolt") and name.endswith(".csv"):
-            files["wolt"] = f
+            wolt_candidates.append(f)
         elif name.startswith("credo_sms") and name.endswith(".csv"):
             files["credo_sms"] = f
+
+    # Если несколько zen файлов — берём последний по дате в имени (zen_YYYY-MM-DD_*) или по mtime
+    if zen_candidates:
+        import re as _re
+        def _zen_key(f):
+            m = _re.search(r'zen_(\d{4}-\d{2}-\d{2})', f.name)
+            return (1, m.group(1)) if m else (0, str(f.stat().st_mtime))
+        files["zen"] = sorted(zen_candidates, key=_zen_key)[-1]
+        if len(zen_candidates) > 1:
+            print(f"  [zen] найдено {len(zen_candidates)} файлов, используется: {files['zen'].name}")
+
+    # Если несколько wolt файлов — берём самый новый по mtime
+    if wolt_candidates:
+        files["wolt"] = sorted(wolt_candidates, key=lambda f: f.stat().st_mtime)[-1]
+        if len(wolt_candidates) > 1:
+            print(f"  [wolt] найдено {len(wolt_candidates)} файлов, используется: {files['wolt'].name}")
 
     return files
 

@@ -1,7 +1,6 @@
 {
   "_comment": "Маппинг категорий из всех источников → единая система",
   "_base_currency": "RUB",
-
   "zen": {
     "income": {
       "Работа": "work_income",
@@ -64,7 +63,6 @@
       "Роуминг": "telecom"
     }
   },
-
   "wolt": {
     "Продукты": "groceries",
     "Кафе/Фастфуд": "eating_out",
@@ -73,13 +71,28 @@
     "Сервис Wolt": "delivery_fee",
     "Товары": "shopping"
   },
-
   "paypal": {
     "_comment": "PayPal категоризируется по description + name",
-    "types_income": ["Mobile Payment", "General Payment", "Express Checkout Payment", "Payment Refund"],
-    "types_expense": ["Subscription Payment", "PreApproved Payment Bill User Payment"],
-    "types_conversion": ["General Currency Conversion", "User Initiated Currency Conversion"],
-    "types_ignore": ["Account Hold for Open Authorization", "Reversal of General Account Hold", "General Card Deposit", "General Card Withdrawal"],
+    "types_income": [
+      "Mobile Payment",
+      "General Payment",
+      "Express Checkout Payment",
+      "Payment Refund"
+    ],
+    "types_expense": [
+      "Subscription Payment",
+      "PreApproved Payment Bill User Payment"
+    ],
+    "types_conversion": [
+      "General Currency Conversion",
+      "User Initiated Currency Conversion"
+    ],
+    "types_ignore": [
+      "Account Hold for Open Authorization",
+      "Reversal of General Account Hold",
+      "General Card Deposit",
+      "General Card Withdrawal"
+    ],
     "subscriptions": {
       "Spotify": "subscriptions",
       "PERLEGO": "education",
@@ -108,10 +121,10 @@
       "PebbleHost": "work_expenses",
       "Meta Platforms": "work_expenses",
       "ETSY": "shopping",
-      "Proton": "work_expenses"
+      "Proton": "work_expenses",
+      "Yana Kalmykova": "kids"
     }
   },
-
   "credo_sms": {
     "_comment": "Категоризация SMS-операций Credo Bank по мерчанту",
     "merchants": {
@@ -130,7 +143,6 @@
       "FGC MAE": "transport",
       "ALSA": "transport",
       "LTD BATUMI AUTOTRANSPO": "transport",
-
       "_comment_groceries": "Продукты: супермаркеты, рынки, мелкие магазины",
       "Wolt": "groceries",
       "SPAR": "groceries",
@@ -165,7 +177,6 @@
       "RETAIL GROUP": "groceries",
       "ONEPRICE RETAIL": "groceries",
       "MINISO": "shopping",
-
       "_comment_eating_out": "Кафе и рестораны",
       "Glovo": "eating_out",
       "McDonald": "eating_out",
@@ -242,7 +253,6 @@
       "ADA": "eating_out",
       "MERKADO": "eating_out",
       "SCROLL": "eating_out",
-
       "_comment_subscriptions": "Подписки и сервисы",
       "NETFLIX": "subscriptions",
       "SPOTIFY": "subscriptions",
@@ -256,7 +266,6 @@
       "GOOGLE TELEGRAM": "subscriptions",
       "CRUNCHYROLL": "subscriptions",
       "GOOGLE *NORTONLIFELOCK": "subscriptions",
-
       "_comment_work": "Рабочие расходы и инструменты",
       "CLAUDE.AI": "work_expenses",
       "ANTHROPIC": "work_expenses",
@@ -264,7 +273,6 @@
       "CURSOR, AI": "work_expenses",
       "GOOGLE *MANUS AI": "work_expenses",
       "EDITOR COLLAB": "work_expenses",
-
       "_comment_education": "Образование",
       "Audible": "education",
       "GOOGLE *CLOZEMASTER": "education",
@@ -273,7 +281,6 @@
       "LIFEARCHITECT.COM": "education",
       "MEMORIAPUBLISHING": "education",
       "PERLEGO": "education",
-
       "_comment_entertainment": "Развлечения и игры",
       "GOOGLE *DIGITAL DETOX": "entertainment",
       "GOOGLE DIGITAL DETOX": "entertainment",
@@ -302,7 +309,6 @@
       "LTD BATUT-CENTRI": "entertainment",
       "ASTRA PARK": "entertainment",
       "CATINAFLAT": "entertainment",
-
       "_comment_travel": "Путешествия и отели",
       "BLABLACAR": "travel",
       "OMIO": "travel",
@@ -317,7 +323,6 @@
       "TAXI PAULINO": "travel",
       "ENJOY SANTANDER": "travel",
       "BLS INTERNATIONAL": "travel",
-
       "_comment_health": "Здоровье и медицина",
       "CURATIO": "health",
       "SYNEVO": "health",
@@ -327,7 +332,6 @@
       "GEORGIAN-AMERICAN CLINIC": "health",
       "NEW MEDI": "health",
       "PHARMADEPOT": "health",
-
       "_comment_shopping": "Покупки",
       "PAYPAL": "other_expense",
       "ZOOMMER": "shopping",
@@ -342,7 +346,6 @@
       "FW-MARKET* FLOWWOW": "gifts",
       "YOUR INSPIRATION WITH LOV": "gifts",
       "LTD BALTIC TEXTILE": "shopping",
-
       "_comment_utilities": "Коммуналка и связь",
       "Tbilisi energy": "utilities",
       "GWP": "utilities",
@@ -351,21 +354,16 @@
       "Magti": "telecom",
       "VODAFONE ROAMING": "telecom",
       "MY VIVA": "telecom",
-
       "_comment_kids": "Дети",
       "OUTSCHOOL": "kids",
-
       "_comment_pets": "Животные",
       "ZOOFAMILY": "pets",
       "LTD ZOOMART": "pets",
       "PET HOUSE": "pets",
-
       "_comment_self_care": "Уход за собой",
       "MOZART ROYAL": "self_care",
-
       "_comment_fitness": "Фитнес/спорт",
       "WHOOP": "fitness",
-
       "_comment_payments": "Платежи, нотариус, гос.услуги",
       "UNIPAY": "payments",
       "LTD KEEPZ.ME": "payments",
@@ -379,21 +377,25 @@
       "SUN PETROLIUM": "transport",
       "DRIVE 888": "transport",
       "CAREERWRITE": "work_expenses",
-
       "_comment_income": "Доходы: клиенты, переводы",
       "ULANOVA, ANNA": "work_income",
       "MEDVEDEVA, PRAPION": "work_income",
       "PAYS*MEDVEDEVA": "work_income",
       "ALEKSANDR SELIVANOV": "work_income",
       "NATALIA FOMINCEVA": "transfer",
-
       "_comment_transfers": "Переводы (не расходы)",
       "PAYSEND": "transfer",
       "KORONAPAY": "transfer",
       "ZOLOTAYA KORONA": "transfer",
-
       "_comment_cash": "Снятие наличных",
-      "ATM": "cash_out"
+      "ATM": "cash_out",
+      "Outgoing transfer": "transfer",
+      "VSA_sidekicker.ai": "subscriptions",
+      "VSA§sidekicker.ai": "subscriptions",
+      "sidekicker": "subscriptions",
+      "NOTE COMPANION": "subscriptions",
+      "LLC CRUMBS AND CO": "eating_out",
+      "Google Ingress": "entertainment"
     },
     "type_mapping": {
       "payment": "expense",
@@ -407,7 +409,6 @@
       "commission": "expense"
     }
   },
-
   "display_names": {
     "cash_out": "Снятие наличных",
     "work_income": "Работа (доход)",
