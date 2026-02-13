@@ -29,7 +29,7 @@ from config import (
     TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
 )
-from prompts import SENSORY_LEYA_PROMPT, WHOOP_HEALTH_SYSTEM
+from prompts import SENSORY_LEYA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import load_file, get_week_events, is_muted
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -49,6 +49,7 @@ from keyboards import (
     get_joy_keyboard, get_joy_items_keyboard,
     get_task_confirm_keyboard, get_destination_keyboard,
     get_priority_keyboard,
+    get_sensory_bad_keyboard, BINGO_ITEMS,
 )
 from handlers import (
     start, switch_to_geek, switch_to_leya,
@@ -390,6 +391,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"Задача: {pending['content']}\nЗона: {zone}\n\nВыбери приоритет:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
+    # ── Sensory Bad (bingo checklist) ──
+    elif data == "sensory_bad":
+        context.user_data["sensory_bad_selected"] = set()
+        await query.edit_message_text(
+            "Что может быть причиной? Отмечай всё что откликается:",
+            reply_markup=get_sensory_bad_keyboard(set())
+        )
+
+    elif data.startswith("sensory_bad_toggle_"):
+        idx = int(data.replace("sensory_bad_toggle_", ""))
+        selected = context.user_data.get("sensory_bad_selected", set())
+        if idx in selected:
+            selected.discard(idx)
+        else:
+            selected.add(idx)
+        context.user_data["sensory_bad_selected"] = selected
+        await query.edit_message_reply_markup(reply_markup=get_sensory_bad_keyboard(selected))
+
+    elif data == "sensory_bad_submit":
+        selected = context.user_data.get("sensory_bad_selected", set())
+        context.user_data["sensory_bad_selected"] = set()
+        if not selected:
+            items_text = "ничего конкретного не отмечено"
+        else:
+            items_text = "\n".join(f"- {BINGO_ITEMS[i]}" for i in sorted(selected))
+        try:
+            system = SENSORY_BAD_PROMPT.format(selected_items=items_text)
+            prompt = "Human нажала Разобраться после того как отметила причины плохого состояния."
+            response = await get_llm_response(prompt, max_tokens=500, custom_system=system)
+        except Exception as e:
+            logger.warning(f"Sensory bad LLM failed: {e}")
+            response = f"Ты отметила:\n{items_text}\n\nПопробуй начать с самого простого из списка."
+        await query.edit_message_text(response, parse_mode="Markdown")
 
     # ── Sensory ──
     elif data.startswith("sensory_"):

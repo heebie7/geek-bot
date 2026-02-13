@@ -137,6 +137,37 @@ def get_note_mode_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
+BINGO_ITEMS = [
+    "did not eat",
+    "new hyperfixation and no time for it",
+    "have not done a creative in 24 hrs",
+    "Bad Sounds",
+    "clothes are touching my body",
+    "cold",
+    "people",
+    "one (1) comment is stuck in my brain like a popcorn kernel",
+    "last time I drank water was ??????",
+    "nervous nervous nervous nervous",
+    "got a Slightly Worse grade than expected",
+    "last hug was ??????",
+    "slept a full 45 minutes",
+    "lonely ............",
+    "guts are shredding (again)",
+    "have not seen sunlight in 24 hrs",
+    "stuck inside",
+    "too much screen time",
+    "Yay Overwhelm",
+    "room is disaster area",
+    "have not talked to Person in a while",
+    "bored",
+    "imposter phenomenon (again)",
+    "no current routine",
+    "how long have I been working???",
+    "Too Much Socialization",
+    "something is actually wrong",
+]
+
+
 def get_sensory_keyboard():
     """Inline keyboard for sensory state selection."""
     keyboard = [
@@ -146,8 +177,19 @@ def get_sensory_keyboard():
         ],
         [
             InlineKeyboardButton("🟢 Inputs", callback_data="sensory_inputs"),
+            InlineKeyboardButton("🖤 Плохо", callback_data="sensory_bad"),
         ],
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_sensory_bad_keyboard(selected: set):
+    """Inline keyboard for the 'Плохо' bingo checklist."""
+    keyboard = []
+    for i, item in enumerate(BINGO_ITEMS):
+        prefix = "☑️" if i in selected else "⬜"
+        keyboard.append([InlineKeyboardButton(f"{prefix} {item}", callback_data=f"sensory_bad_toggle_{i}")])
+    keyboard.append([InlineKeyboardButton("🔍 Разобраться", callback_data="sensory_bad_submit")])
     return InlineKeyboardMarkup(keyboard)
 
 
