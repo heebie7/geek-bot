@@ -62,7 +62,7 @@ from handlers import (
     whoop_command, setup_whoop_command, stop_whoop_command,
     myid_command,
     check_reminders,
-    sleep_reminder_job, whoop_morning_recovery,
+    sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
     whoop_weekly_summary, monday_review,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_photo_note, handle_message,
@@ -884,6 +884,12 @@ def main() -> None:
         time=time(hour=12, minute=0, tzinfo=TZ),
         chat_id=OWNER_CHAT_ID,
         name=f"whoop_morning_{OWNER_CHAT_ID}",
+    )
+    job_queue.run_daily(
+        whoop_evening_update,
+        time=time(hour=23, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"whoop_evening_{OWNER_CHAT_ID}",
     )
     job_queue.run_daily(
         whoop_weekly_summary,

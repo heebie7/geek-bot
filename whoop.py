@@ -265,6 +265,18 @@ class WhoopClient:
             "current": current
         }
 
+    def get_workouts_today(self) -> list:
+        """Get today's workouts."""
+        now = datetime.now(TZ)
+        start = now.replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/activity/workout", params={
+            "start": start,
+            "limit": 10,
+        })
+        if data and data.get("records"):
+            return data["records"]
+        return []
+
     def get_body_measurement(self) -> dict | None:
         """Get latest body measurement."""
         data = self._api_get("/v2/user/measurement/body")
@@ -335,6 +347,198 @@ class WhoopClient:
         parts.append(f"REM: {rem_min} min, Deep: {deep_min} min")
 
         return "\n".join(parts)
+
+    def format_daily_note(self, rec=None, sleep=None, body=None, cycle=None, workouts=None) -> str:
+        """Generate daily note with YAML frontmatter for Obsidian.
+
+        All parameters are raw API responses (or None if unavailable).
+        Returns full markdown content ready to save as YYYY-MM-DD.md.
+        """
+        today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+        # === Extract fields ===
+        # Recovery
+        recovery = None
+        recovery_state = None
+        rhr = None
+        hrv = None
+        spo2 = None
+        skin_temp = None
+        if rec:
+            s = rec.get("score", {})
+            recovery = s.get("recovery_score")
+            rhr = s.get("resting_heart_rate")
+            hrv_raw = s.get("hrv_rmssd_milli")
+            hrv = round(hrv_raw, 1) if hrv_raw is not None else None
+            spo2 = s.get("spo2_percentage")
+            skin_temp = s.get("skin_temp_celsius")
+            if recovery is not None:
+                recovery_state = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
+
+        # Sleep
+        sleep_hours = None
+        sleep_perf = None
+        sleep_eff = None
+        sleep_consistency = None
+        respiratory_rate = None
+        rem_min = None
+        deep_min = None
+        light_min = None
+        awake_min = None
+        disturbances = None
+        sleep_need_base_min = None
+        sleep_need_debt_min = None
+        sleep_need_strain_min = None
+        if sleep:
+            ss = sleep.get("score", {})
+            stage = ss.get("stage_summary", {})
+            total_ms = stage.get("total_in_bed_time_milli", 0)
+            sleep_hours = round(total_ms / 3_600_000, 1) if total_ms else None
+            sleep_perf = ss.get("sleep_performance_percentage")
+            sleep_eff_raw = ss.get("sleep_efficiency_percentage")
+            sleep_eff = round(sleep_eff_raw, 1) if sleep_eff_raw is not None else None
+            sleep_consistency = ss.get("sleep_consistency_percentage")
+            respiratory_rate = ss.get("respiratory_rate")
+            if respiratory_rate is not None:
+                respiratory_rate = round(respiratory_rate, 1)
+            rem_min = round(stage.get("total_rem_sleep_time_milli", 0) / 60_000) if stage.get("total_rem_sleep_time_milli") else None
+            deep_min = round(stage.get("total_slow_wave_sleep_time_milli", 0) / 60_000) if stage.get("total_slow_wave_sleep_time_milli") else None
+            light_min = round(stage.get("total_light_sleep_time_milli", 0) / 60_000) if stage.get("total_light_sleep_time_milli") else None
+            awake_min = round(stage.get("total_awake_time_milli", 0) / 60_000) if stage.get("total_awake_time_milli") else None
+            disturbances = stage.get("disturbance_count")
+            sn = ss.get("sleep_needed", {})
+            if sn:
+                sleep_need_base_min = round(sn.get("baseline_milli", 0) / 60_000) if sn.get("baseline_milli") else None
+                sleep_need_debt_min = round(sn.get("need_from_sleep_debt_milli", 0) / 60_000) if sn.get("need_from_sleep_debt_milli") else None
+                sleep_need_strain_min = round(sn.get("need_from_recent_strain_milli", 0) / 60_000) if sn.get("need_from_recent_strain_milli") else None
+
+        # Cycle / Strain
+        strain = None
+        kilojoule = None
+        avg_hr = None
+        max_hr = None
+        if cycle:
+            cs = cycle.get("score", {})
+            strain_raw = cs.get("strain")
+            strain = round(strain_raw, 1) if strain_raw is not None else None
+            kilojoule_raw = cs.get("kilojoule")
+            kilojoule = round(kilojoule_raw) if kilojoule_raw is not None else None
+            avg_hr = cs.get("average_heart_rate")
+            max_hr = cs.get("max_heart_rate")
+
+        # Body
+        weight = None
+        body_fat = None
+        if body:
+            w = body.get("weight_kilogram") or body.get("body_mass_kg")
+            weight = round(w, 1) if w else None
+            bf = body.get("body_fat_percentage")
+            body_fat = round(bf, 1) if bf else None
+
+        # Workouts
+        boxing = False
+        workout_count = 0
+        workout_strain_total = 0
+        workout_lines = []
+        if workouts:
+            workout_count = len(workouts)
+            for wo in workouts:
+                ws = wo.get("score", {})
+                sport = wo.get("sport_name", "Unknown")
+                if sport.lower() in ("boxing", "kickboxing", "martial arts"):
+                    boxing = True
+                wo_strain = ws.get("strain")
+                if wo_strain:
+                    workout_strain_total = round(workout_strain_total + wo_strain, 1)
+                start_str = wo.get("start", "")
+                end_str = wo.get("end", "")
+                try:
+                    start_t = datetime.fromisoformat(start_str.replace("Z", "+00:00")).astimezone(TZ).strftime("%H:%M")
+                    end_t = datetime.fromisoformat(end_str.replace("Z", "+00:00")).astimezone(TZ).strftime("%H:%M")
+                    time_range = f"{start_t}-{end_t}"
+                except:
+                    time_range = ""
+                parts = [time_range, sport]
+                if wo_strain:
+                    parts.append(f"Strain: {round(wo_strain, 1)}")
+                if ws.get("average_heart_rate"):
+                    parts.append(f"Avg HR: {ws['average_heart_rate']}")
+                if ws.get("max_heart_rate"):
+                    parts.append(f"Max HR: {ws['max_heart_rate']}")
+                if ws.get("kilojoule"):
+                    parts.append(f"{round(ws['kilojoule'], 1)} kJ")
+                workout_lines.append("- " + " | ".join(p for p in parts if p))
+        # Fallback: detect boxing by strain threshold if no workout data
+        if not workouts and strain is not None and strain >= 5:
+            boxing = True
+
+        # === Build YAML frontmatter ===
+        def v(val):
+            return "null" if val is None else str(val)
+
+        def vbool(val):
+            return "true" if val else "false"
+
+        fm = [
+            "---",
+            f"date: {today}",
+            f"recovery: {v(recovery)}",
+            f"recovery_state: {recovery_state or 'null'}",
+            f"rhr: {v(rhr)}",
+            f"hrv: {v(hrv)}",
+            f"spo2: {v(spo2)}",
+            f"skin_temp: {v(skin_temp)}",
+            f"sleep_hours: {v(sleep_hours)}",
+            f"sleep_perf: {v(sleep_perf)}",
+            f"sleep_eff: {v(sleep_eff)}",
+            f"sleep_consistency: {v(sleep_consistency)}",
+            f"respiratory_rate: {v(respiratory_rate)}",
+            f"rem_min: {v(rem_min)}",
+            f"deep_min: {v(deep_min)}",
+            f"light_min: {v(light_min)}",
+            f"awake_min: {v(awake_min)}",
+            f"disturbances: {v(disturbances)}",
+            f"sleep_need_base_min: {v(sleep_need_base_min)}",
+            f"sleep_need_debt_min: {v(sleep_need_debt_min)}",
+            f"sleep_need_strain_min: {v(sleep_need_strain_min)}",
+            f"strain: {v(strain)}",
+            f"kilojoule: {v(kilojoule)}",
+            f"avg_hr: {v(avg_hr)}",
+            f"max_hr: {v(max_hr)}",
+            f"weight: {v(weight)}",
+            f"body_fat: {v(body_fat)}",
+            f"boxing: {vbool(boxing)}",
+            f"workout_count: {workout_count}",
+            f"workout_strain_total: {v(workout_strain_total if workout_count else None)}",
+            "---",
+        ]
+
+        # === Build human-readable body ===
+        body_lines = []
+        if recovery is not None:
+            line = f"Recovery: {recovery}% ({recovery_state})"
+            if hrv is not None:
+                line += f" | HRV: {hrv} ms | RHR: {rhr} bpm"
+            body_lines.append(line)
+        if sleep_hours is not None:
+            line = f"Sleep: {sleep_hours}h (perf {sleep_perf}%, eff {sleep_eff}%)"
+            if rem_min is not None:
+                line += f" | REM: {rem_min} min, Deep: {deep_min} min"
+            body_lines.append(line)
+        if strain is not None:
+            line = f"Strain: {strain}"
+            if boxing:
+                line += " (бокс)"
+            body_lines.append(line)
+        if weight is not None:
+            body_lines.append(f"Weight: {weight} kg")
+
+        if workout_lines:
+            body_lines.append("")
+            body_lines.append("## Workouts")
+            body_lines.extend(workout_lines)
+
+        return "\n".join(fm) + "\n\n" + "\n".join(body_lines) + "\n"
 
     def format_weekly_summary(self) -> str:
         """Weekly recovery trend."""

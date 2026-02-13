@@ -626,78 +626,79 @@ async def next_steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 def log_whoop_data():
-    """Log today's WHOOP data to life/whoop.md and update здоровье.md."""
+    """Log today's WHOOP data to daily note and update здоровье.md.
+
+    Creates/updates life/health/whoop/YYYY-MM-DD.md with full YAML frontmatter.
+    Also maintains legacy life/whoop.md for backward compatibility.
+    """
     try:
         today = datetime.now(TZ).strftime("%Y-%m-%d")
 
-        # Gather data
+        # Gather data from all endpoints
         rec = whoop_client.get_recovery_today()
         sleep = whoop_client.get_sleep_today()
         body = whoop_client.get_body_measurement()
         cycle = whoop_client.get_cycle_today()
+        workouts = whoop_client.get_workouts_today()
 
-        # Build today's entry
-        entry_parts = [f"## {today}"]
-
-        if rec:
-            score = rec.get("score", {})
-            rs = score.get("recovery_score")
-            rhr = score.get("resting_heart_rate")
-            hrv = score.get("hrv_rmssd_milli")
-            if rs is not None:
-                color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
-                entry_parts.append(f"- Recovery: {rs}% ({color})")
-            if rhr is not None:
-                entry_parts.append(f"- RHR: {rhr} bpm")
-            if hrv is not None:
-                entry_parts.append(f"- HRV: {round(hrv, 1)} ms")
-
-        if sleep:
-            ss = sleep.get("score", {})
-            stage = ss.get("stage_summary", {})
-            total_ms = stage.get("total_in_bed_time_milli", 0)
-            total_h = round(total_ms / 3_600_000, 1)
-            perf = ss.get("sleep_performance_percentage")
-            eff = ss.get("sleep_efficiency_percentage")
-            rem_min = round(stage.get("total_rem_sleep_time_milli", 0) / 60_000)
-            deep_min = round(stage.get("total_slow_wave_sleep_time_milli", 0) / 60_000)
-            entry_parts.append(f"- Sleep: {total_h}h (perf {perf}%, eff {eff}%)")
-            entry_parts.append(f"- REM: {rem_min} min, Deep: {deep_min} min")
-
-        if body:
-            w = body.get("weight_kilogram") or body.get("body_mass_kg")
-            bf = body.get("body_fat_percentage")
-            if w:
-                entry_parts.append(f"- Weight: {round(w, 1)} kg")
-            if bf:
-                entry_parts.append(f"- Body fat: {round(bf, 1)}%")
-
-        if cycle:
-            cs = cycle.get("score", {})
-            strain = round(cs.get("strain", 0), 1)
-            boxed = "да" if strain >= 5 else "нет"
-            entry_parts.append(f"- Strain: {strain} (бокс: {boxed})")
-
-        if len(entry_parts) <= 1:
-            # No data to log
+        # Check we have at least some data
+        if not any([rec, sleep, body, cycle]):
+            logger.info("No WHOOP data available to log")
             return
 
-        entry = "\n".join(entry_parts)
+        # Generate daily note with full frontmatter
+        daily_note = whoop_client.format_daily_note(
+            rec=rec, sleep=sleep, body=body, cycle=cycle, workouts=workouts
+        )
 
-        # Append to life/whoop.md
+        # Save as daily file (always overwrites — data may have been updated)
+        daily_path = f"life/health/whoop/{today}.md"
+        save_writing_file(daily_path, daily_note, f"WHOOP {today}")
+
+        # Legacy: also append to life/whoop.md (will be removed later)
         existing = get_writing_file("life/whoop.md")
-        if not existing:
-            existing = "# WHOOP Log\n\n"
-
-        # Check if today already logged (avoid duplicates)
-        if f"## {today}" not in existing:
-            new_content = existing.rstrip() + "\n\n" + entry + "\n"
-            save_writing_file("life/whoop.md", new_content, f"WHOOP log {today}")
+        if existing and f"## {today}" not in existing:
+            entry_parts = [f"## {today}"]
+            if rec:
+                score = rec.get("score", {})
+                rs = score.get("recovery_score")
+                rhr = score.get("resting_heart_rate")
+                hrv = score.get("hrv_rmssd_milli")
+                if rs is not None:
+                    color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+                    entry_parts.append(f"- Recovery: {rs}% ({color})")
+                if rhr is not None:
+                    entry_parts.append(f"- RHR: {rhr} bpm")
+                if hrv is not None:
+                    entry_parts.append(f"- HRV: {round(hrv, 1)} ms")
+            if sleep:
+                ss = sleep.get("score", {})
+                stage = ss.get("stage_summary", {})
+                total_ms = stage.get("total_in_bed_time_milli", 0)
+                total_h = round(total_ms / 3_600_000, 1)
+                perf = ss.get("sleep_performance_percentage")
+                eff = ss.get("sleep_efficiency_percentage")
+                rem_min = round(stage.get("total_rem_sleep_time_milli", 0) / 60_000)
+                deep_min = round(stage.get("total_slow_wave_sleep_time_milli", 0) / 60_000)
+                entry_parts.append(f"- Sleep: {total_h}h (perf {perf}%, eff {eff}%)")
+                entry_parts.append(f"- REM: {rem_min} min, Deep: {deep_min} min")
+            if body:
+                w = body.get("weight_kilogram") or body.get("body_mass_kg")
+                if w:
+                    entry_parts.append(f"- Weight: {round(w, 1)} kg")
+            if cycle:
+                cs = cycle.get("score", {})
+                strain = round(cs.get("strain", 0), 1)
+                boxed = "да" if strain >= 5 else "нет"
+                entry_parts.append(f"- Strain: {strain} (бокс: {boxed})")
+            if len(entry_parts) > 1:
+                new_content = existing.rstrip() + "\n\n" + "\n".join(entry_parts) + "\n"
+                save_writing_file("life/whoop.md", new_content, f"WHOOP log {today}")
 
         # Update здоровье.md WHOOP section with latest values
         _update_health_whoop(rec, sleep, body)
 
-        logger.info(f"WHOOP data logged for {today}")
+        logger.info(f"WHOOP data logged for {today} (daily note + legacy)")
     except Exception as e:
         logger.error(f"WHOOP logging failed: {e}")
 
@@ -1111,6 +1112,15 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(f"Your chat_id: {update.effective_chat.id}")
 
 
+async def whoop_evening_update(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Silent evening job — update daily note with final strain and workouts."""
+    try:
+        log_whoop_data()
+        logger.info("Evening WHOOP update completed")
+    except Exception as e:
+        logger.error(f"Evening WHOOP update failed: {e}")
+
+
 async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /whoop_on — включить утреннее WHOOP уведомление."""
     chat_id = update.effective_chat.id
@@ -1118,6 +1128,8 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Remove existing WHOOP jobs for this chat
     for job in job_queue.get_jobs_by_name(f"whoop_morning_{chat_id}"):
+        job.schedule_removal()
+    for job in job_queue.get_jobs_by_name(f"whoop_evening_{chat_id}"):
         job.schedule_removal()
     for job in job_queue.get_jobs_by_name(f"whoop_weekly_{chat_id}"):
         job.schedule_removal()
@@ -1128,6 +1140,14 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         time=time(hour=12, minute=0, tzinfo=TZ),
         chat_id=chat_id,
         name=f"whoop_morning_{chat_id}",
+    )
+
+    # Evening strain update at 23:00 (silent — just logs data, no message)
+    job_queue.run_daily(
+        whoop_evening_update,
+        time=time(hour=23, minute=0, tzinfo=TZ),
+        chat_id=chat_id,
+        name=f"whoop_evening_{chat_id}",
     )
 
     # Weekly summary on Mondays at 11:00
@@ -1153,6 +1173,7 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         "WHOOP notifications on.\n"
         "Recovery: 12:00 daily\n"
+        "Strain update: 23:00 daily (silent)\n"
         "Weekly summary: Mon 11:00\n"
         "Sleep reminders: 01:05 / 01:35 / 02:05 (3 levels)\n\n"
         "/whoop_off to disable"
@@ -1165,6 +1186,8 @@ async def stop_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     job_queue = context.application.job_queue
 
     for job in job_queue.get_jobs_by_name(f"whoop_morning_{chat_id}"):
+        job.schedule_removal()
+    for job in job_queue.get_jobs_by_name(f"whoop_evening_{chat_id}"):
         job.schedule_removal()
     for job in job_queue.get_jobs_by_name(f"whoop_weekly_{chat_id}"):
         job.schedule_removal()
