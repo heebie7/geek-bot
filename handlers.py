@@ -675,13 +675,15 @@ def log_whoop_data():
             if sleep:
                 ss = sleep.get("score", {})
                 stage = ss.get("stage_summary", {})
-                total_ms = stage.get("total_in_bed_time_milli", 0)
-                total_h = round(total_ms / 3_600_000, 1)
+                rem_ms = stage.get("total_rem_sleep_time_milli", 0)
+                deep_ms = stage.get("total_slow_wave_sleep_time_milli", 0)
+                light_ms = stage.get("total_light_sleep_time_milli", 0)
+                actual_h = round((rem_ms + deep_ms + light_ms) / 3_600_000, 1)
                 perf = ss.get("sleep_performance_percentage")
                 eff = ss.get("sleep_efficiency_percentage")
-                rem_min = round(stage.get("total_rem_sleep_time_milli", 0) / 60_000)
-                deep_min = round(stage.get("total_slow_wave_sleep_time_milli", 0) / 60_000)
-                entry_parts.append(f"- Sleep: {total_h}h (perf {perf}%, eff {eff}%)")
+                rem_min = round(rem_ms / 60_000)
+                deep_min = round(deep_ms / 60_000)
+                entry_parts.append(f"- Sleep: {actual_h}h (perf {perf}%, eff {eff}%)")
                 entry_parts.append(f"- REM: {rem_min} min, Deep: {deep_min} min")
             if body:
                 w = body.get("weight_kilogram") or body.get("body_mass_kg")
@@ -781,7 +783,11 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         if sleep_data:
             stage = sleep_data.get("score", {}).get("stage_summary", {})
-            sleep_hours = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+            rem = stage.get("total_rem_sleep_time_milli", 0)
+            deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+            light = stage.get("total_light_sleep_time_milli", 0)
+            actual_ms = rem + deep + light
+            sleep_hours = round(actual_ms / 3_600_000, 1) if actual_ms else 0
 
         if cycle:
             strain = round(cycle.get("score", {}).get("strain", 0), 1)
@@ -863,13 +869,18 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         strain = 0
         recovery_score = 0
 
-        # Sleep data
+        # Sleep data (actual sleep = REM + Deep + Light, not in-bed)
         if sleep:
             ss = sleep.get("score", {})
             stage = ss.get("stage_summary", {})
-            sleep_hours = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+            rem = stage.get("total_rem_sleep_time_milli", 0)
+            deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+            light = stage.get("total_light_sleep_time_milli", 0)
+            actual_ms = rem + deep + light
+            sleep_hours = round(actual_ms / 3_600_000, 1) if actual_ms else 0
+            in_bed_h = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
             perf = ss.get("sleep_performance_percentage")
-            data_parts.append(f"Сон: {sleep_hours}h (performance {perf}%)")
+            data_parts.append(f"Сон: {sleep_hours}h (in bed {in_bed_h}h, performance {perf}%)")
 
         # Recovery data
         if rec:

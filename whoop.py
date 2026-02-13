@@ -320,7 +320,7 @@ class WhoopClient:
         return "\n".join(parts)
 
     def format_sleep_today(self) -> str:
-        """Human-readable sleep summary."""
+        """Human-readable sleep summary (actual sleep, not in-bed)."""
         sleep = self.get_sleep_today()
         if not sleep:
             return "Нет данных сна."
@@ -328,23 +328,27 @@ class WhoopClient:
         score = sleep.get("score", {})
         stage = score.get("stage_summary", {})
 
-        total_ms = stage.get("total_in_bed_time_milli", 0)
-        total_hours = round(total_ms / 3_600_000, 1)
-
         rem_ms = stage.get("total_rem_sleep_time_milli", 0)
         deep_ms = stage.get("total_slow_wave_sleep_time_milli", 0)
+        light_ms = stage.get("total_light_sleep_time_milli", 0)
         rem_min = round(rem_ms / 60_000)
         deep_min = round(deep_ms / 60_000)
+        light_min = round(light_ms / 60_000)
+        actual_min = rem_min + deep_min + light_min
+        actual_h = round(actual_min / 60, 1)
+
+        in_bed_ms = stage.get("total_in_bed_time_milli", 0)
+        in_bed_h = round(in_bed_ms / 3_600_000, 1)
 
         perf = score.get("sleep_performance_percentage")
         efficiency = score.get("sleep_efficiency_percentage")
 
-        parts = [f"Sleep: {total_hours}h"]
+        parts = [f"Sleep: {actual_h}h (in bed {in_bed_h}h)"]
         if perf is not None:
             parts.append(f"Performance: {perf}%")
         if efficiency is not None:
             parts.append(f"Efficiency: {efficiency}%")
-        parts.append(f"REM: {rem_min} min, Deep: {deep_min} min")
+        parts.append(f"REM: {rem_min} min, Deep: {deep_min} min, Light: {light_min} min")
 
         return "\n".join(parts)
 
@@ -376,7 +380,8 @@ class WhoopClient:
                 recovery_state = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
 
         # Sleep
-        sleep_hours = None
+        in_bed_hours = None
+        actual_sleep_min = None
         sleep_perf = None
         sleep_eff = None
         sleep_consistency = None
@@ -393,7 +398,7 @@ class WhoopClient:
             ss = sleep.get("score", {})
             stage = ss.get("stage_summary", {})
             total_ms = stage.get("total_in_bed_time_milli", 0)
-            sleep_hours = round(total_ms / 3_600_000, 1) if total_ms else None
+            in_bed_hours = round(total_ms / 3_600_000, 1) if total_ms else None
             sleep_perf = ss.get("sleep_performance_percentage")
             sleep_eff_raw = ss.get("sleep_efficiency_percentage")
             sleep_eff = round(sleep_eff_raw, 1) if sleep_eff_raw is not None else None
@@ -406,6 +411,9 @@ class WhoopClient:
             light_min = round(stage.get("total_light_sleep_time_milli", 0) / 60_000) if stage.get("total_light_sleep_time_milli") else None
             awake_min = round(stage.get("total_awake_time_milli", 0) / 60_000) if stage.get("total_awake_time_milli") else None
             disturbances = stage.get("disturbance_count")
+            # Actual sleep = REM + Deep + Light (not in-bed time)
+            if rem_min is not None or deep_min is not None or light_min is not None:
+                actual_sleep_min = (rem_min or 0) + (deep_min or 0) + (light_min or 0)
             sn = ss.get("sleep_needed", {})
             if sn:
                 sleep_need_base_min = round(sn.get("baseline_milli", 0) / 60_000) if sn.get("baseline_milli") else None
@@ -488,7 +496,8 @@ class WhoopClient:
             f"hrv: {v(hrv)}",
             f"spo2: {v(spo2)}",
             f"skin_temp: {v(skin_temp)}",
-            f"sleep_hours: {v(sleep_hours)}",
+            f"in_bed_hours: {v(in_bed_hours)}",
+            f"actual_sleep_min: {v(actual_sleep_min)}",
             f"sleep_perf: {v(sleep_perf)}",
             f"sleep_eff: {v(sleep_eff)}",
             f"sleep_consistency: {v(sleep_consistency)}",
@@ -520,8 +529,9 @@ class WhoopClient:
             if hrv is not None:
                 line += f" | HRV: {hrv} ms | RHR: {rhr} bpm"
             body_lines.append(line)
-        if sleep_hours is not None:
-            line = f"Sleep: {sleep_hours}h (perf {sleep_perf}%, eff {sleep_eff}%)"
+        if in_bed_hours is not None:
+            actual_h = round(actual_sleep_min / 60, 1) if actual_sleep_min else in_bed_hours
+            line = f"Sleep: {actual_h}h (perf {sleep_perf}%, eff {sleep_eff}%)"
             if rem_min is not None:
                 line += f" | REM: {rem_min} min, Deep: {deep_min} min"
             body_lines.append(line)

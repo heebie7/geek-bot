@@ -320,9 +320,12 @@ def _get_whoop_context() -> str:
         if sleep:
             ss = sleep.get("score", {})
             stage = ss.get("stage_summary", {})
-            total_h = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
+            rem = stage.get("total_rem_sleep_time_milli", 0)
+            deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+            light = stage.get("total_light_sleep_time_milli", 0)
+            actual_h = round((rem + deep + light) / 3_600_000, 1)
             perf = ss.get("sleep_performance_percentage")
-            parts.append(f"Сон: {total_h}h (performance {perf}%)")
+            parts.append(f"Сон: {actual_h}h (performance {perf}%)")
 
         # Strain / boxing
         cycle = whoop_client.get_cycle_today()
