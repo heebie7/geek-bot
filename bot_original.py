@@ -3461,7 +3461,7 @@ def _get_whoop_context() -> str:
 
 
 def log_whoop_data():
-    """Log today's WHOOP data to life/whoop.md and update здоровье.md."""
+    """Log today's WHOOP data to life/health/whoop.md and update здоровье.md."""
     try:
         today = datetime.now(TZ).strftime("%Y-%m-%d")
 
@@ -3519,15 +3519,15 @@ def log_whoop_data():
 
         entry = "\n".join(entry_parts)
 
-        # Append to life/whoop.md
-        existing = get_writing_file("life/whoop.md")
+        # Append to life/health/whoop.md
+        existing = get_writing_file("life/health/whoop.md")
         if not existing:
             existing = "# WHOOP Log\n\n"
 
         # Check if today already logged (avoid duplicates)
         if f"## {today}" not in existing:
             new_content = existing.rstrip() + "\n\n" + entry + "\n"
-            save_writing_file("life/whoop.md", new_content, f"WHOOP log {today}")
+            save_writing_file("life/health/whoop.md", new_content, f"WHOOP log {today}")
 
         # Update здоровье.md WHOOP section with latest values
         _update_health_whoop(rec, sleep, body)
@@ -3539,7 +3539,7 @@ def log_whoop_data():
 
 def _update_health_whoop(rec, sleep, body):
     """Update the WHOOP tracking section in здоровье.md."""
-    health = get_writing_file("life/здоровье.md")
+    health = get_writing_file("life/health/здоровье.md")
     if not health:
         return
 
@@ -3583,7 +3583,7 @@ def _update_health_whoop(rec, sleep, body):
     updated = re.sub(pattern, new_section, health, flags=re.DOTALL)
 
     if updated != health:
-        save_writing_file("life/здоровье.md", updated, "Update WHOOP stats")
+        save_writing_file("life/health/здоровье.md", updated, "Update WHOOP stats")
 
 
 async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -1,6 +1,6 @@
 """
 Meal database and weekly menu generator.
-Data mirrors family kitchen.md in Obsidian.
+Data mirrors family health/kitchen.md in Obsidian.
 """
 
 import random

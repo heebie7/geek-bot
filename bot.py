@@ -29,7 +29,7 @@ from config import (
     TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
 )
-from prompts import SENSORY_LEYA_PROMPT
+from prompts import SENSORY_LEYA_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import load_file, get_week_events, is_muted
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -661,7 +661,7 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
 - Если human сказала "{feeling_text}" и данные расходятся — обрати внимание коротко
 - Без эмодзи. На русском. 3-5 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         await query.edit_message_text(text)

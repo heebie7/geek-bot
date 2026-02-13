@@ -22,7 +22,7 @@ from config import (
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI,
     REMINDERS, SLEEP_PROMPTS,
 )
-from prompts import SENSORY_LEYA_PROMPT
+from prompts import SENSORY_LEYA_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import (
     load_file, get_writing_file, save_writing_file,
     get_week_events, register_family_member, get_family_chat_id,
@@ -40,6 +40,7 @@ from joy import get_joy_stats_week, log_joy, _joy_items_cache
 from llm import (
     get_llm_response, get_motivations_for_whoop,
     get_motivations_for_mode, get_sleep_level, _get_whoop_context,
+    _is_health_topic,
 )
 from keyboards import (
     get_main_keyboard, get_reply_keyboard, get_add_keyboard,
@@ -705,7 +706,7 @@ def log_whoop_data():
 
 def _update_health_whoop(rec, sleep, body):
     """Update the WHOOP tracking section in здоровье.md."""
-    health = get_writing_file("life/здоровье.md")
+    health = get_writing_file("life/health/здоровье.md")
     if not health:
         return
 
@@ -749,7 +750,7 @@ def _update_health_whoop(rec, sleep, body):
     updated = re.sub(pattern, new_section, health, flags=re.DOTALL)
 
     if updated != health:
-        save_writing_file("life/здоровье.md", updated, "Update WHOOP stats")
+        save_writing_file("life/health/здоровье.md", updated, "Update WHOOP stats")
 
 
 async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -813,7 +814,7 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 - Подставь реальные числа из данных
 - Без эмодзи. На русском."""
 
-            text = await get_llm_response(prompt, mode="geek", max_tokens=600, skip_context=True)
+            text = await get_llm_response(prompt, mode="geek", max_tokens=600, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
             text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         else:
             text = data_text
@@ -1021,7 +1022,7 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
 - Рекомендации на следующую неделю
 - Без эмодзи. На русском. 5-8 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         # Strip SAVE tags — LLM sometimes generates them in scheduled messages
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         await context.bot.send_message(chat_id=chat_id, text=text)
@@ -1353,7 +1354,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Sleep protocol: трёхуровневая эскалация
     sleep_level = get_sleep_level()
 
-    response = await get_llm_response(user_message, mode=mode, history=history)
+    response = await get_llm_response(
+        user_message, mode=mode, history=history,
+        use_pro=_is_health_topic(user_message),
+    )
 
     # Проверяем есть ли предложение сохранить
     clean_response, save_type, zone_or_title, content = parse_save_tag(response)

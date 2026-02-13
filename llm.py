@@ -2,7 +2,8 @@ import random
 from datetime import datetime
 from google import genai
 from config import (
-    gemini_client, openai_client, GEMINI_MODEL, OPENAI_MODEL,
+    gemini_client, openai_client,
+    GEMINI_MODEL, GEMINI_PRO_MODEL, OPENAI_MODEL,
     TZ, logger, USER_CONTEXT_FILE, LEYA_CONTEXT_FILE,
 )
 from prompts import GEEK_PROMPT, LEYA_PROMPT
@@ -193,11 +194,31 @@ def get_sleep_level() -> int:
     return 0
 
 
-async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False, custom_system: str = None) -> str:
-    """Получить ответ от LLM. Gemini primary, OpenAI fallback.
+# Health-related keywords for routing to Gemini Pro
+_HEALTH_KEYWORDS = {
+    "sleep", "recovery", "hrv", "strain", "whoop", "rhr",
+    "heart rate", "workout", "training", "exercise",
+    "boxing", "cardio", "rest", "fatigue", "energy",
+    "health", "overtraining",
+    "сон", "восстановление", "пульс", "нагрузка", "тренировка",
+    "бокс", "кардио", "отдых", "усталость", "энергия",
+    "здоровье", "тело", "перетренированность", "спорт",
+    "сердце", "давление", "рекавери", "стрейн",
+}
+
+
+def _is_health_topic(message: str) -> bool:
+    """Check if user message is about health/fitness/WHOOP topics."""
+    lower = message.lower()
+    return any(kw in lower for kw in _HEALTH_KEYWORDS)
+
+
+async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False, custom_system: str = None, use_pro: bool = False) -> str:
+    """Получить ответ от LLM. Gemini Flash primary, Gemini Pro для здоровья, OpenAI fallback.
 
     skip_context=True — не грузить tasks/whoop в system prompt (для команд где контекст уже в user_message).
     custom_system — полностью заменяет system prompt (для специализированных режимов вроде sensory).
+    use_pro=True — использовать Gemini 2.5 Pro (для WHOOP/здоровья) вместо Flash.
     """
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
@@ -222,7 +243,10 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
     if history is None:
         history = []
 
-    # Try Gemini first
+    # Select Gemini model: Pro for health/WHOOP, Flash for everything else
+    model = GEMINI_PRO_MODEL if use_pro else GEMINI_MODEL
+
+    # Try Gemini
     if gemini_client:
         try:
             # Gemini: передаём историю как список сообщений
@@ -238,7 +262,7 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
             ))
 
             response = gemini_client.models.generate_content(
-                model=GEMINI_MODEL,
+                model=model,
                 contents=gemini_contents,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system,
@@ -246,9 +270,10 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                 ),
             )
             if response.text:
+                logger.info(f"Gemini response OK ({model})")
                 return response.text
             else:
-                logger.warning(f"Gemini returned empty response, falling back to OpenAI")
+                logger.warning(f"Gemini {model} returned empty response, falling back to OpenAI")
         except Exception as e:
             logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
 
@@ -270,7 +295,7 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
 
-    return "Оба API недоступны. Попробуй позже."
+    return "Все API недоступны. Попробуй позже."
 
 
 def _get_whoop_context() -> str:
