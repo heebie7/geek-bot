@@ -24,9 +24,7 @@
       "Одежда, обувь, аксессуары": "refund",
       "Проценты": "interest_income",
       "Ольга А": "other_income",
-      "Александра М": "other_income",
-      "Ксения Зернина": "other_income",
-      "Забота о себе": "work_income"
+      "Ксения Зернина": "other_income"
     },
     "expense": {
       "Продукты": "groceries",
@@ -64,7 +62,8 @@
       "Долг": "debt",
       "Аренда": "rent_expense",
       "Игры": "entertainment",
-      "Роуминг": "telecom"
+      "Роуминг": "telecom",
+      "Александра М": "self_care"
     }
   },
   "wolt": {
