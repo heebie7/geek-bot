@@ -420,7 +420,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             system = SENSORY_BAD_PROMPT.format(selected_items=items_text)
             prompt = "Human нажала Разобраться после того как отметила причины плохого состояния."
-            response = await get_llm_response(prompt, max_tokens=500, custom_system=system)
+            response = await get_llm_response(prompt, max_tokens=1000, custom_system=system)
         except Exception as e:
             logger.warning(f"Sensory bad LLM failed: {e}")
             response = f"Ты отметила:\n{items_text}\n\nПопробуй начать с самого простого из списка."
