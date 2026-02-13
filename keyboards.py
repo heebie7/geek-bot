@@ -189,7 +189,7 @@ def get_sensory_bad_keyboard(selected: set):
     for i, item in enumerate(BINGO_ITEMS):
         prefix = "☑️" if i in selected else "⬜"
         keyboard.append([InlineKeyboardButton(f"{prefix} {item}", callback_data=f"sensory_bad_toggle_{i}")])
-    keyboard.append([InlineKeyboardButton("🔍 Разобраться", callback_data="sensory_bad_submit")])
+    keyboard.append([InlineKeyboardButton("🔍 figure it out", callback_data="sensory_bad_submit")])
     return InlineKeyboardMarkup(keyboard)
 
 
