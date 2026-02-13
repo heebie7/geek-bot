@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Финансовый процессор: Zen Money + PayPal + Wolt → единый CSV + monthly summary.
+Финансовый процессор: Zen Money + PayPal + Credo SMS → единый CSV + monthly summary.
 
 Использование:
     python process.py 2026-01              # один месяц
@@ -8,7 +8,7 @@
     python process.py 2026-01 --dry-run     # только показать, не записывать
 
 Ищет raw файлы в finance/raw/{year}/ по паттернам:
-    zen*.csv, pp*.csv (или paypal*.csv), wolt*.csv
+    zen*.csv, pp*.csv (или paypal*.csv), credo_sms*.csv
 """
 
 import argparse
@@ -182,7 +182,7 @@ def strip_surname(description):
 # ПАРСЕРЫ ИСТОЧНИКОВ
 # =============================================================================
 
-def parse_zen(filepath, categories, target_period, has_wolt_data=False):
+def parse_zen(filepath, categories, target_period):
     """
     Парсит Zen Money CSV.
 
@@ -190,17 +190,8 @@ def parse_zen(filepath, categories, target_period, has_wolt_data=False):
     - outcome > 0 И income == 0 → расход
     - income > 0 И outcome == 0 → доход
     - outcome > 0 И income > 0 → перевод между счетами
-
-    Дедупликация Wolt:
-    - Если has_wolt_data=True, пропускаем ВСЕ Wolt-операции из Zen Money,
-      потому что Wolt-чеки точнее (разбивка по категориям: продукты/еда/здоровье).
-      Zen Money ловит их по SMS/push как одну сумму без детализации.
-      Даты между Zen Money и Wolt-чеками не совпадают (банк проводит позже),
-      поэтому matching по дате+сумме невозможен — пропускаем все.
-    - Проверяем и payee, и categoryName на содержание "wolt".
     """
     rows = []
-    wolt_skipped = 0
     cat_map_exp = categories["zen"]["expense"]
     cat_map_inc = categories["zen"]["income"]
 
@@ -217,11 +208,6 @@ def parse_zen(filepath, categories, target_period, has_wolt_data=False):
 
             category_name = row.get("categoryName", "").strip().strip('"')
             payee = row.get("payee", "").strip().strip('"')
-
-            # Дедупликация Wolt: пропускаем если есть Wolt-чеки
-            if has_wolt_data and ("wolt" in payee.lower() or "wolt" in category_name.lower()):
-                wolt_skipped += 1
-                continue
 
             # Переводы через Золотую Корону / КоронаПэй — это transfer, не расход
             payee_lower = payee.lower()
@@ -291,9 +277,6 @@ def parse_zen(filepath, categories, target_period, has_wolt_data=False):
                     "source": "zenmoney",
                     "account": income_acc,
                 })
-
-    if wolt_skipped > 0:
-        print(f"  Zen Money: пропущено {wolt_skipped} Wolt-операций (есть Wolt-чеки)")
 
     return rows
 
@@ -419,62 +402,7 @@ def parse_paypal(filepath, categories, target_period):
     return rows
 
 
-def parse_wolt(filepath, categories, target_period):
-    """
-    Парсит Wolt CSV (из обработанных чеков).
-
-    Формат: vendor,date,total,currency,items_count,file_name,month,year,category
-    Десятичный разделитель: запятая (50,5 = 50.50)
-
-    Возвращает (rows, None) — второй элемент для совместимости.
-    Wolt-чеки точнее Zen Money: разбивка по категориям (продукты/еда/здоровье),
-    а Zen Money ловит только общую сумму по SMS/push.
-    """
-    rows = []
-    cat_map = categories["wolt"]
-
-    with _open_source(filepath, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            date_str = row.get("date", "").strip()
-            if not date_str:
-                continue
-
-            # Фильтр по периоду
-            if not date_str.startswith(target_period):
-                continue
-
-            vendor = row.get("vendor", "").strip()
-            total_str = row.get("total", "0").strip().replace(",", ".")
-            currency = row.get("currency", "GEL").strip()
-            wolt_category = row.get("category", "").strip()
-
-            try:
-                total = float(total_str)
-            except ValueError:
-                continue
-
-            if total <= 0:
-                continue
-
-            cat = cat_map.get(wolt_category, "shopping")
-
-            rows.append({
-                "date": date_str,
-                "type": "expense",
-                "category": cat,
-                "description": f"Wolt: {vendor}"[:80],
-                "amount": total,
-                "currency": currency,
-                "amount_rub": to_rub(total, currency, date_str),
-                "source": "wolt",
-                "account": "Wolt",
-            })
-
-    return rows, None
-
-
-def parse_credo_sms(filepath, categories, target_period, has_wolt_data=False):
+def parse_credo_sms(filepath, categories, target_period):
     """
     Парсит CSV из extract_sms.py (банковские SMS Credo Bank).
 
@@ -482,11 +410,9 @@ def parse_credo_sms(filepath, categories, target_period, has_wolt_data=False):
 
     Дедупликация:
     - PayPal-операции из SMS пропускаются (PayPal CSV точнее)
-    - Wolt-операции из SMS пропускаются если есть Wolt-чеки (чеки точнее по категориям)
     """
     rows = []
     paypal_skipped = 0
-    wolt_skipped = 0
     sms_cat = categories.get("credo_sms", {})
     merchant_map = sms_cat.get("merchants", {})
     type_map = sms_cat.get("type_mapping", {})
@@ -519,11 +445,6 @@ def parse_credo_sms(filepath, categories, target_period, has_wolt_data=False):
             # Пропускаем PayPal-операции (PayPal CSV точнее)
             if "PAYPAL" in merchant.upper():
                 paypal_skipped += 1
-                continue
-
-            # Пропускаем Wolt-операции если есть чеки (чеки точнее по категориям)
-            if has_wolt_data and "WOLT" in merchant.upper():
-                wolt_skipped += 1
                 continue
 
             # Определяем тип для unified формата
@@ -573,8 +494,6 @@ def parse_credo_sms(filepath, categories, target_period, has_wolt_data=False):
 
     if paypal_skipped > 0:
         print(f"  Credo SMS: пропущено {paypal_skipped} PayPal-операций (есть PayPal CSV)")
-    if wolt_skipped > 0:
-        print(f"  Credo SMS: пропущено {wolt_skipped} Wolt-операций (есть Wolt-чеки)")
 
     return rows
 
@@ -592,15 +511,12 @@ def find_raw_files(year):
 
     files = {}
     zen_candidates = []
-    wolt_candidates = []
     for f in year_dir.iterdir():
         name = f.name.lower()
         if name.startswith("zen") and name.endswith(".csv"):
             zen_candidates.append(f)
         elif (name.startswith("pp") or name.startswith("paypal") or name.startswith("download")) and name.endswith(".csv"):
             files["paypal"] = f
-        elif name.startswith("wolt") and name.endswith(".csv"):
-            wolt_candidates.append(f)
         elif name.startswith("credo_sms") and name.endswith(".csv"):
             files["credo_sms"] = f
 
@@ -613,12 +529,6 @@ def find_raw_files(year):
         files["zen"] = sorted(zen_candidates, key=_zen_key)[-1]
         if len(zen_candidates) > 1:
             print(f"  [zen] найдено {len(zen_candidates)} файлов, используется: {files['zen'].name}")
-
-    # Если несколько wolt файлов — берём самый новый по mtime
-    if wolt_candidates:
-        files["wolt"] = sorted(wolt_candidates, key=lambda f: f.stat().st_mtime)[-1]
-        if len(wolt_candidates) > 1:
-            print(f"  [wolt] найдено {len(wolt_candidates)} файлов, используется: {files['wolt'].name}")
 
     return files
 
@@ -966,23 +876,14 @@ def main():
     # Парсим каждый источник
     # Порядок важен для дедупликации:
     # 1. Credo SMS — точные данные по грузинским картам
-    # 2. Wolt чеки — точнее SMS по категориям продуктов
-    # 3. Zen Money — RUB операции (точные), GEL операции (неточные, дедуплицируются)
-    # 4. PayPal — точные данные
+    # 2. Zen Money — RUB операции (точные), GEL операции (неточные, дедуплицируются)
+    # 3. PayPal — точные данные
     all_rows = []
-    has_wolt = False
     has_credo_sms = False
-
-    if "wolt" in raw_files:
-        wolt_rows, _ = parse_wolt(raw_files["wolt"], categories, period)
-        has_wolt = len(wolt_rows) > 0
-        print(f"Wolt: {len(wolt_rows)} транзакций")
-        all_rows.extend(wolt_rows)
 
     if "credo_sms" in raw_files:
         credo_rows = parse_credo_sms(
             raw_files["credo_sms"], categories, period,
-            has_wolt_data=has_wolt,
         )
         has_credo_sms = len(credo_rows) > 0
         print(f"Credo SMS: {len(credo_rows)} транзакций")
@@ -991,7 +892,6 @@ def main():
     if "zen" in raw_files:
         zen_rows = parse_zen(
             raw_files["zen"], categories, period,
-            has_wolt_data=(has_wolt or has_credo_sms),
         )
         # Если есть Credo SMS — фильтруем GEL-операции из Zen Money (SMS точнее)
         if has_credo_sms:

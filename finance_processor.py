@@ -11,7 +11,7 @@ from pathlib import Path
 from config import logger
 from storage import list_writing_dir, get_writing_file, save_writing_file
 from process import (
-    parse_zen, parse_paypal, parse_wolt, parse_credo_sms,
+    parse_zen, parse_paypal, parse_credo_sms,
     fetch_floatrates, set_rates, load_categories,
     generate_monthly_summary, generate_yearly_summary,
     CSV_FIELDS, FALLBACK_RATES,
@@ -40,8 +40,6 @@ def _download_raw_files(year: str) -> dict:
             source = "zen"
         elif (lower.startswith("pp") or lower.startswith("paypal") or lower.startswith("download")) and lower.endswith(".csv"):
             source = "paypal"
-        elif lower.startswith("wolt") and lower.endswith(".csv"):
-            source = "wolt"
         elif lower.startswith("credo_sms") and lower.endswith(".csv"):
             source = "credo_sms"
         else:
@@ -108,19 +106,11 @@ def process_period(period: str) -> str:
     # Парсим — порядок важен для дедупликации
     all_rows = []
     stats = []
-    has_wolt = False
     has_credo_sms = False
-
-    if "wolt" in raw_files:
-        wolt_rows, _ = parse_wolt(io.StringIO(raw_files["wolt"]), categories, period)
-        has_wolt = len(wolt_rows) > 0
-        stats.append(f"Wolt: {len(wolt_rows)}")
-        all_rows.extend(wolt_rows)
 
     if "credo_sms" in raw_files:
         credo_rows = parse_credo_sms(
             io.StringIO(raw_files["credo_sms"]), categories, period,
-            has_wolt_data=has_wolt,
         )
         has_credo_sms = len(credo_rows) > 0
         stats.append(f"Credo SMS: {len(credo_rows)}")
@@ -129,7 +119,6 @@ def process_period(period: str) -> str:
     if "zen" in raw_files:
         zen_rows = parse_zen(
             io.StringIO(raw_files["zen"]), categories, period,
-            has_wolt_data=(has_wolt or has_credo_sms),
         )
         if has_credo_sms:
             zen_rows = [r for r in zen_rows if r["currency"] != "GEL" or r["type"] == "transfer"]
