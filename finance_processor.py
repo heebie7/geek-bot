@@ -39,7 +39,7 @@ def _download_raw_files(year: str) -> dict:
         if lower.startswith("zen") and lower.endswith(".csv"):
             source = "zen"
         elif (lower.startswith("pp") or lower.startswith("paypal") or lower.startswith("download")) and lower.endswith(".csv"):
-            source = "paypal"
+            source = "paypal_files"
         elif lower.startswith("credo_sms") and lower.endswith(".csv"):
             source = "credo_sms"
         else:
@@ -47,7 +47,10 @@ def _download_raw_files(year: str) -> dict:
 
         content = get_writing_file(path)
         if content:
-            if source in raw:
+            if source == "paypal_files":
+                raw.setdefault("paypal_files", []).append(content)
+                logger.info(f"Downloaded paypal: {name} ({len(content)} bytes)")
+            elif source in raw:
                 # Уже есть данные этого источника — дописываем строки (без заголовка)
                 lines = content.split('\n', 1)
                 if len(lines) > 1:
@@ -125,10 +128,20 @@ def process_period(period: str) -> str:
         stats.append(f"Zen Money: {len(zen_rows)}")
         all_rows.extend(zen_rows)
 
-    if "paypal" in raw_files:
-        pp_rows = parse_paypal(io.StringIO(raw_files["paypal"]), categories, period)
-        stats.append(f"PayPal: {len(pp_rows)}")
-        all_rows.extend(pp_rows)
+    if "paypal_files" in raw_files:
+        seen_tx_ids = set()
+        pp_all = []
+        for pp_content in raw_files["paypal_files"]:
+            pp_rows = parse_paypal(io.StringIO(pp_content), categories, period)
+            for r in pp_rows:
+                tx_id = r.pop("_tx_id", "")
+                if tx_id and tx_id in seen_tx_ids:
+                    continue
+                if tx_id:
+                    seen_tx_ids.add(tx_id)
+                pp_all.append(r)
+        stats.append(f"PayPal: {len(pp_all)} ({len(raw_files['paypal_files'])} файлов)")
+        all_rows.extend(pp_all)
 
     if not all_rows:
         return f"Нет транзакций за {period}."
