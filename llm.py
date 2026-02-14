@@ -270,10 +270,12 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                 ),
             )
             if response.text:
-                logger.info(f"Gemini response OK ({model})")
+                finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
+                logger.info(f"Gemini response OK ({model}), finish_reason={finish}, len={len(response.text)}")
                 return response.text
             else:
-                logger.warning(f"Gemini {model} returned empty response, falling back to OpenAI")
+                finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
+                logger.warning(f"Gemini {model} returned empty response, finish_reason={finish}, falling back to OpenAI")
         except Exception as e:
             logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
 
