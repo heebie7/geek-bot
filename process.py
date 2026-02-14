@@ -387,6 +387,7 @@ def parse_paypal(filepath, categories, target_period):
             if cat not in ("other_expense", "other_income"):
                 desc = strip_surname(desc)
 
+            tx_id = row.get("Transaction ID", "").strip().strip('"')
             rows.append({
                 "date": date_str,
                 "type": tx_type,
@@ -397,6 +398,7 @@ def parse_paypal(filepath, categories, target_period):
                 "amount_rub": to_rub(gross, currency, date_str),
                 "source": "paypal",
                 "account": "PayPal",
+                "_tx_id": tx_id,
             })
 
     return rows
@@ -516,7 +518,7 @@ def find_raw_files(year):
         if name.startswith("zen") and name.endswith(".csv"):
             zen_candidates.append(f)
         elif (name.startswith("pp") or name.startswith("paypal") or name.startswith("download")) and name.endswith(".csv"):
-            files["paypal"] = f
+            files.setdefault("paypal_files", []).append(f)
         elif name.startswith("credo_sms") and name.endswith(".csv"):
             files["credo_sms"] = f
 
@@ -870,7 +872,11 @@ def main():
     print(f"\nПериод: {period}")
     print(f"Найдены файлы:")
     for source, path in raw_files.items():
-        print(f"  {source}: {path.name}")
+        if isinstance(path, list):
+            for p in path:
+                print(f"  {source}: {p.name}")
+        else:
+            print(f"  {source}: {path.name}")
     print()
 
     # Парсим каждый источник
@@ -903,10 +909,20 @@ def main():
         print(f"Zen Money: {len(zen_rows)} транзакций")
         all_rows.extend(zen_rows)
 
-    if "paypal" in raw_files:
-        pp_rows = parse_paypal(raw_files["paypal"], categories, period)
-        print(f"PayPal: {len(pp_rows)} транзакций")
-        all_rows.extend(pp_rows)
+    if "paypal_files" in raw_files:
+        seen_tx_ids = set()
+        pp_all = []
+        for pp_file in sorted(raw_files["paypal_files"], key=lambda f: f.name):
+            pp_rows = parse_paypal(pp_file, categories, period)
+            for r in pp_rows:
+                tx_id = r.pop("_tx_id", "")
+                if tx_id and tx_id in seen_tx_ids:
+                    continue
+                if tx_id:
+                    seen_tx_ids.add(tx_id)
+                pp_all.append(r)
+        print(f"PayPal: {len(pp_all)} транзакций ({len(raw_files['paypal_files'])} файлов)")
+        all_rows.extend(pp_all)
 
     print(f"\nВсего: {len(all_rows)} транзакций")
 
