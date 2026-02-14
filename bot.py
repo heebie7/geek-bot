@@ -425,7 +425,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             logger.warning(f"Sensory bad LLM failed: {e}")
             response = f"Ты отметила:\n{items_text}\n\nПопробуй начать с самого простого из списка."
-        await query.edit_message_text(response)
+        await query.edit_message_text("✓ investigate")
+        await query.message.reply_text(response)
 
     # ── Sensory ──
     elif data.startswith("sensory_"):
@@ -454,7 +455,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.warning(f"Sensory LLM failed, using hardcoded fallback: {e}")
             response = _sensory_hardcoded_response(state, menu)
 
-        await query.edit_message_text(response)
+        await query.edit_message_text("✓")
+        await query.message.reply_text(response)
 
     # ── Joy ──
     elif data.startswith("joy_"):
