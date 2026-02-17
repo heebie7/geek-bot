@@ -289,6 +289,20 @@ class WhoopClient:
             return data["records"]
         return []
 
+    def get_workouts_yesterday(self) -> list:
+        """Get yesterday's workouts."""
+        now = datetime.now(TZ)
+        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
+        end = now.replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/activity/workout", params={
+            "start": start,
+            "end": end,
+            "limit": 10,
+        })
+        if data and data.get("records"):
+            return data["records"]
+        return []
+
     def get_workouts_week(self) -> list:
         """Get last 7 days of workouts."""
         now = datetime.now(TZ)

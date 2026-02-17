@@ -896,12 +896,19 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             if hrv:
                 data_parts.append(f"HRV: {round(hrv, 1)} ms")
 
-        # Yesterday's strain (not today's!)
+        # Yesterday's strain
         if cycle_yesterday:
             cs = cycle_yesterday.get("score", {})
             strain = round(cs.get("strain", 0), 1)
-            trained = "тренировка была" if strain >= 5 else "без тренировки"
-            data_parts.append(f"Вчера strain: {strain} ({trained})")
+            data_parts.append(f"Вчера strain: {strain}")
+
+        # Yesterday's workouts (real data)
+        workouts_yesterday = whoop_client.get_workouts_yesterday()
+        if workouts_yesterday:
+            wo_names = [wo.get("sport_name", "?") for wo in workouts_yesterday]
+            data_parts.append(f"Тренировки вчера: {', '.join(wo_names)}")
+        else:
+            data_parts.append("Тренировки вчера: нет")
 
         # 3-day trend
         trend_direction = trend.get("direction", "stable")
@@ -919,12 +926,14 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         # Store data for callback handler
         if not hasattr(context, 'bot_data'):
             context.bot_data = {}
+        wo_names = [wo.get("sport_name", "?") for wo in workouts_yesterday] if workouts_yesterday else []
         context.bot_data[f"morning_{chat_id}"] = {
             "sleep_hours": sleep_hours,
             "strain": strain,
             "recovery": recovery_score,
             "trend": trend_direction,
             "prev_avg": prev_avg,
+            "workouts_yesterday": wo_names,
         }
 
         # Build message with feeling buttons

@@ -679,6 +679,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         recovery = morning_data.get("recovery", 0)
         trend = morning_data.get("trend", "stable")
         prev_avg = morning_data.get("prev_avg")
+        workouts_yesterday = morning_data.get("workouts_yesterday", [])
 
         feeling_bad = feeling in ["tired", "bad"]
         trend_down = trend == "down"
@@ -693,9 +694,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         motivations = get_motivations_for_mode(mode, sleep_hours, strain, recovery)
 
         color = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
+        wo_text = ", ".join(workouts_yesterday) if workouts_yesterday else "нет"
         data_summary = f"""Recovery: {recovery}% ({color})
 Сон: {sleep_hours}h
 Strain вчера: {strain}
+Тренировки вчера: {wo_text}
 Тренд: {trend} ({prev_avg}% → {recovery}%)"""
 
         feeling_text = {
@@ -712,17 +715,18 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
 
 Ты — Geek (ART из Murderbot Diaries). Дай мотивацию на день.
 
-ОБЯЗАТЕЛЬНО ИСПОЛЬЗУЙ 1-2 из этих фраз (подставь реальные числа):
+Если подходят, используй 1-2 из этих фраз (подставь реальные числа):
 {motivations}
 
-СТРОГИЕ ПРАВИЛА:
-- Цвет зоны recovery: green (67-100%), yellow (34-66%), red (0-33%). Используй ТОЛЬКО цвет из данных: {color}. НЕ ВЫДУМЫВАЙ другой цвет
+Что учесть:
+- Цвет зоны recovery: {color}. Зоны: green (67-100%), yellow (34-66%), red (0-33%)
 - Не пересказывай данные целиком — выдели главное
+- Сон — если мало, обрати внимание на влияние на работу с клиентами
 - Режим "{mode}" — {"рекомендуй отдых, лёгкую активность, никаких серьёзных нагрузок" if mode == "recovery" else "можно тренироваться, но без фанатизма" if mode == "moderate" else "обычная мотивация"}
 - Если human сказала "{feeling_text}" и данные расходятся — обрати внимание коротко
-- Без эмодзи. На русском. 3-5 предложений."""
+- Без эмодзи. На русском. 4-6 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=500, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=700, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         await query.edit_message_text(text)
