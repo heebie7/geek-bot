@@ -329,12 +329,19 @@ def _get_whoop_context() -> str:
             perf = ss.get("sleep_performance_percentage")
             parts.append(f"Сон: {actual_h}h (performance {perf}%)")
 
-        # Strain / boxing
+        # Strain
         cycle = whoop_client.get_cycle_today()
         if cycle:
             strain = round(cycle.get("score", {}).get("strain", 0), 1)
-            boxed = "да" if strain >= 5 else "нет"
-            parts.append(f"Strain: {strain} (бокс: {boxed})")
+            parts.append(f"Strain: {strain}")
+
+        # Workouts
+        workouts = whoop_client.get_workouts_today()
+        if workouts:
+            wo_names = [wo.get("sport_name", "?") for wo in workouts]
+            parts.append(f"Тренировки сегодня: {', '.join(wo_names)}")
+        else:
+            parts.append("Тренировки сегодня: нет")
 
         # Weekly averages
         week = whoop_client.get_recovery_week()
