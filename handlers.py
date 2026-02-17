@@ -888,7 +888,40 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             sleep_hours = round(actual_ms / 3_600_000, 1) if actual_ms else 0
             in_bed_h = round(stage.get("total_in_bed_time_milli", 0) / 3_600_000, 1)
             perf = ss.get("sleep_performance_percentage")
-            data_parts.append(f"Сон: {sleep_hours}h (in bed {in_bed_h}h, performance {perf}%)")
+            eff = ss.get("sleep_efficiency_percentage")
+            consistency = ss.get("sleep_consistency_percentage")
+            resp_rate = ss.get("respiratory_rate")
+            awake_ms = stage.get("total_awake_time_milli", 0)
+            awake_min = round(awake_ms / 60_000) if awake_ms else 0
+            disturbances = stage.get("disturbance_count")
+            rem_min = round(rem / 60_000) if rem else 0
+            deep_min = round(deep / 60_000) if deep else 0
+
+            sleep_line = f"Сон: {sleep_hours}h (in bed {in_bed_h}h, performance {perf}%"
+            if eff is not None:
+                sleep_line += f", efficiency {eff}%"
+            sleep_line += ")"
+            data_parts.append(sleep_line)
+            data_parts.append(f"Фазы: REM {rem_min}min, Deep {deep_min}min")
+            if awake_min or disturbances:
+                awake_line = f"Пробуждения: {awake_min}min"
+                if disturbances is not None:
+                    awake_line += f", {disturbances}x"
+                data_parts.append(awake_line)
+            if consistency is not None:
+                data_parts.append(f"Sleep consistency: {consistency}%")
+
+            # Sleep need (debt tracking)
+            sleep_needed = ss.get("sleep_needed", {})
+            if sleep_needed:
+                base_h = round(sleep_needed.get("baseline_milli", 0) / 3_600_000, 1)
+                debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
+                strain_need_h = round(sleep_needed.get("need_from_recent_strain_milli", 0) / 3_600_000, 1)
+                total_need = round(base_h + debt_h + strain_need_h, 1)
+                data_parts.append(f"Потребность во сне: {total_need}h (база {base_h}h + долг {debt_h}h + strain {strain_need_h}h)")
+
+            if resp_rate is not None:
+                data_parts.append(f"Respiratory rate: {round(resp_rate, 1)} rpm")
 
         # Recovery data
         if rec:
@@ -896,6 +929,8 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             recovery_score = score.get("recovery_score", 0)
             rhr = score.get("resting_heart_rate")
             hrv = score.get("hrv_rmssd_milli")
+            spo2 = score.get("spo2_percentage")
+            skin_temp = score.get("skin_temp_celsius")
             if recovery_score is not None:
                 color = "green" if recovery_score >= 67 else ("yellow" if recovery_score >= 34 else "red")
                 data_parts.append(f"Recovery: {recovery_score}% ({color})")
@@ -903,6 +938,10 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
                 data_parts.append(f"RHR: {rhr} bpm")
             if hrv:
                 data_parts.append(f"HRV: {round(hrv, 1)} ms")
+            if spo2 is not None:
+                data_parts.append(f"SpO2: {spo2}%")
+            if skin_temp is not None:
+                data_parts.append(f"Skin temp: {round(skin_temp, 1)}°C")
 
         # Yesterday's strain
         if cycle_yesterday:
@@ -1006,6 +1045,13 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         if week_sleep:
             sleep_hours = []
             sleep_perfs = []
+            sleep_effs = []
+            sleep_consistencies = []
+            resp_rates = []
+            disturbances_list = []
+            awake_mins = []
+            rem_mins = []
+            deep_mins = []
             for sl in week_sleep:
                 ss = sl.get("score", {})
                 stage = ss.get("stage_summary", {})
@@ -1015,18 +1061,48 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
                 actual_h = round((rem + deep + light) / 3_600_000, 1)
                 if actual_h > 0:
                     sleep_hours.append(actual_h)
+                if rem:
+                    rem_mins.append(round(rem / 60_000))
+                if deep:
+                    deep_mins.append(round(deep / 60_000))
                 perf = ss.get("sleep_performance_percentage")
                 if perf is not None:
                     sleep_perfs.append(perf)
+                eff = ss.get("sleep_efficiency_percentage")
+                if eff is not None:
+                    sleep_effs.append(eff)
+                cons = ss.get("sleep_consistency_percentage")
+                if cons is not None:
+                    sleep_consistencies.append(cons)
+                rr = ss.get("respiratory_rate")
+                if rr is not None:
+                    resp_rates.append(rr)
+                awake_ms = stage.get("total_awake_time_milli", 0)
+                if awake_ms:
+                    awake_mins.append(round(awake_ms / 60_000))
+                dist = stage.get("disturbance_count")
+                if dist is not None:
+                    disturbances_list.append(dist)
             if sleep_hours:
                 avg_sleep = round(sum(sleep_hours) / len(sleep_hours), 1)
                 min_sleep = min(sleep_hours)
                 max_sleep = max(sleep_hours)
                 under_7 = sum(1 for h in sleep_hours if h < 7)
                 data_parts.append(f"Сон avg: {avg_sleep}h (min {min_sleep}h, max {max_sleep}h), дней < 7h: {under_7}/{len(sleep_hours)}")
+            if rem_mins and deep_mins:
+                data_parts.append(f"Фазы avg: REM {round(sum(rem_mins)/len(rem_mins))}min, Deep {round(sum(deep_mins)/len(deep_mins))}min")
             if sleep_perfs:
-                avg_perf = round(sum(sleep_perfs) / len(sleep_perfs))
-                data_parts.append(f"Sleep performance avg: {avg_perf}%")
+                data_parts.append(f"Sleep performance avg: {round(sum(sleep_perfs) / len(sleep_perfs))}%")
+            if sleep_effs:
+                data_parts.append(f"Sleep efficiency avg: {round(sum(sleep_effs) / len(sleep_effs))}%")
+            if sleep_consistencies:
+                data_parts.append(f"Sleep consistency avg: {round(sum(sleep_consistencies) / len(sleep_consistencies))}%")
+            if awake_mins:
+                data_parts.append(f"Пробуждения avg: {round(sum(awake_mins)/len(awake_mins))}min")
+            if disturbances_list:
+                data_parts.append(f"Disturbances avg: {round(sum(disturbances_list)/len(disturbances_list), 1)}x/ночь")
+            if resp_rates:
+                data_parts.append(f"Respiratory rate avg: {round(sum(resp_rates)/len(resp_rates), 1)} rpm")
 
         # Strain (avg/min/max instead of raw list)
         if week_cycles:

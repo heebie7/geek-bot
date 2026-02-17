@@ -327,7 +327,18 @@ def _get_whoop_context() -> str:
             light = stage.get("total_light_sleep_time_milli", 0)
             actual_h = round((rem + deep + light) / 3_600_000, 1)
             perf = ss.get("sleep_performance_percentage")
-            parts.append(f"Сон: {actual_h}h (performance {perf}%)")
+            eff = ss.get("sleep_efficiency_percentage")
+            sleep_line = f"Сон: {actual_h}h (performance {perf}%"
+            if eff is not None:
+                sleep_line += f", efficiency {eff}%"
+            sleep_line += ")"
+            parts.append(sleep_line)
+            # Sleep need / debt
+            sleep_needed = ss.get("sleep_needed", {})
+            if sleep_needed:
+                debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
+                if debt_h > 0:
+                    parts.append(f"Sleep debt: {debt_h}h")
 
         # Strain
         cycle = whoop_client.get_cycle_today()
