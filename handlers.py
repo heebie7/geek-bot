@@ -765,8 +765,16 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         cycles = whoop_client.get_cycles_week()
         if cycles:
             strains = [round(c.get("score", {}).get("strain", 0), 1) for c in cycles]
-            days_boxed = sum(1 for s in strains if s >= 5)
-            text += f"\n\nStrain: {strains}\nБокс: {days_boxed}/7 дней"
+            avg_strain = round(sum(strains) / len(strains), 1)
+            text += f"\n\nStrain avg: {avg_strain} (min {min(strains)}, max {max(strains)})"
+        workouts = whoop_client.get_workouts_week()
+        if workouts:
+            from collections import Counter
+            sport_counts = Counter(wo.get("sport_name", "?") for wo in workouts)
+            wo_summary = ", ".join(f"{name} x{c}" for name, c in sport_counts.most_common())
+            text += f"\nТренировки: {wo_summary}"
+        else:
+            text += "\nТренировки: нет за неделю"
         log_whoop_data()
         await update.message.reply_text(text)
     elif subcommand == "sleep":
