@@ -964,9 +964,12 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         # Gather weekly data
         week_records = whoop_client.get_recovery_week()
         week_cycles = whoop_client.get_cycles_week()
+        week_sleep = whoop_client.get_sleep_week()
+        week_workouts = whoop_client.get_workouts_week()
 
         data_parts = []
 
+        # Recovery / HRV / RHR
         if week_records:
             scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
             hrvs = [r.get("score", {}).get("hrv_rmssd_milli") for r in week_records if r.get("score", {}).get("hrv_rmssd_milli") is not None]
@@ -982,21 +985,51 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
             if rhrs:
                 data_parts.append(f"RHR avg: {round(sum(rhrs)/len(rhrs))} bpm")
 
-        days_boxed = 0
-        days_missed = 0
-        strains = []
-        if week_cycles:
-            for c in week_cycles:
-                cs = c.get("score", {})
-                s = cs.get("strain", 0)
-                strains.append(round(s, 1))
-                if s >= 5:
-                    days_boxed += 1
-                else:
-                    days_missed += 1
-            data_parts.append(f"Strain за неделю: {strains}")
-            data_parts.append(f"Бокс: {days_boxed}/7 дней (пропущено: {days_missed})")
+        # Sleep
+        if week_sleep:
+            sleep_hours = []
+            sleep_perfs = []
+            for sl in week_sleep:
+                ss = sl.get("score", {})
+                stage = ss.get("stage_summary", {})
+                rem = stage.get("total_rem_sleep_time_milli", 0)
+                deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+                light = stage.get("total_light_sleep_time_milli", 0)
+                actual_h = round((rem + deep + light) / 3_600_000, 1)
+                if actual_h > 0:
+                    sleep_hours.append(actual_h)
+                perf = ss.get("sleep_performance_percentage")
+                if perf is not None:
+                    sleep_perfs.append(perf)
+            if sleep_hours:
+                avg_sleep = round(sum(sleep_hours) / len(sleep_hours), 1)
+                min_sleep = min(sleep_hours)
+                max_sleep = max(sleep_hours)
+                under_7 = sum(1 for h in sleep_hours if h < 7)
+                data_parts.append(f"Сон avg: {avg_sleep}h (min {min_sleep}h, max {max_sleep}h), дней < 7h: {under_7}/{len(sleep_hours)}")
+            if sleep_perfs:
+                avg_perf = round(sum(sleep_perfs) / len(sleep_perfs))
+                data_parts.append(f"Sleep performance avg: {avg_perf}%")
 
+        # Strain (avg/min/max instead of raw list)
+        if week_cycles:
+            strains = [round(c.get("score", {}).get("strain", 0), 1) for c in week_cycles]
+            avg_strain = round(sum(strains) / len(strains), 1)
+            data_parts.append(f"Day strain avg: {avg_strain} (min {min(strains)}, max {max(strains)})")
+
+        # Workouts (real data, not strain guessing)
+        if week_workouts:
+            from collections import Counter
+            sport_counts = Counter(wo.get("sport_name", "Unknown") for wo in week_workouts)
+            wo_summary = ", ".join(f"{name} x{count}" for name, count in sport_counts.most_common())
+            days_with_workouts = len(set(
+                wo.get("start", "")[:10] for wo in week_workouts if wo.get("start")
+            ))
+            data_parts.append(f"Тренировки: {wo_summary} ({days_with_workouts} дней из 7)")
+        else:
+            data_parts.append("Тренировки: нет за неделю")
+
+        # Body
         body = whoop_client.get_body_measurement()
         if body:
             w = body.get("weight_kilogram") or body.get("body_mass_kg")
@@ -1019,21 +1052,22 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         prompt = f"""Еженедельный отчёт WHOOP:
 {data_str}
 
-Ты — Geek (ART из Murderbot Diaries). Сделай еженедельный отчёт.
+Ты — Geek (ART из Murderbot Diaries). Сделай подробный еженедельный отчёт.
 
-ОБЯЗАТЕЛЬНО ИСПОЛЬЗУЙ 1-2 из этих фраз (подставь числа из данных):
+Если подходят, используй 1-2 из этих фраз (подставь числа из данных):
 {weekly_motivations}
 
-СТРОГИЕ ПРАВИЛА:
-- Цвет зон recovery: green (67-100%), yellow (34-66%), red (0-33%). Используй ТОЛЬКО правильные цвета
-- НЕ ВЫДУМЫВАЙ персонажей, которых нет в фразах выше. Ты — Geek, можешь упомянуть Rin ТОЛЬКО если она есть в предложенных фразах
-- Recovery тренд — улучшается или ухудшается (по данным)
-- Бокс — сколько дней пропущено (strain < 5 = не боксировала)
-- Сон — общая оценка
-- Рекомендации на следующую неделю
-- Без эмодзи. На русском. 5-8 предложений."""
+Что обязательно проанализировать:
+- Recovery тренд — улучшается или ухудшается
+- Сон — подробно: сколько спала в среднем, сколько дней недосып, как это влияет на recovery и работу с клиентами
+- Тренировки — сколько было, какие, есть ли паттерн пропусков
+- Рекомендации на следующую неделю — конкретные
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+Цвет зон recovery: green (67-100%), yellow (34-66%), red (0-33%).
+Не выдумывай персонажей, которых нет в предложенных фразах.
+Без эмодзи. На русском. 8-12 предложений."""
+
+        text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         # Strip SAVE tags — LLM sometimes generates them in scheduled messages
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         await context.bot.send_message(chat_id=chat_id, text=text)
