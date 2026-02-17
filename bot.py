@@ -85,6 +85,19 @@ async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         raise ApplicationHandlerStop()
 
 
+# ── Helpers ─────────────────────────────────────────────────────────
+
+def _trim_to_telegram_limit(text: str, limit: int = 4096) -> str:
+    """Trim text to Telegram message limit, cutting at last complete line."""
+    if len(text) <= limit:
+        return text
+    trimmed = text[:limit - 4]
+    last_newline = trimmed.rfind('\n')
+    if last_newline > limit // 2:
+        trimmed = trimmed[:last_newline]
+    return trimmed + "\n..."
+
+
 # ── Callback dispatcher ─────────────────────────────────────────────
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -425,8 +438,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             logger.warning(f"Sensory bad LLM failed: {e}")
             response = f"Ты отметила:\n{items_text}\n\nПопробуй начать с самого простого из списка."
-        await query.edit_message_text("✓ investigate")
-        await query.message.reply_text(response)
+        response = _trim_to_telegram_limit(response)
+        try:
+            await query.edit_message_text("✓ investigate")
+            await query.message.reply_text(response)
+        except Exception as e:
+            logger.error(f"Failed to send sensory_bad response: {e}")
+            await query.message.reply_text("Что-то пошло не так. Попробуй ещё раз.")
 
     # ── Sensory ──
     elif data.startswith("sensory_"):
@@ -448,15 +466,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 current_time=current_time
             )
             prompt = f"Human нажала кнопку Sensory и выбрала: {state_desc}"
-            response = await get_llm_response(prompt, max_tokens=600, custom_system=system)
+            response = await get_llm_response(prompt, max_tokens=1000, custom_system=system)
             if "API недоступны" in response:
                 response = _sensory_hardcoded_response(state, menu)
         except Exception as e:
             logger.warning(f"Sensory LLM failed, using hardcoded fallback: {e}")
             response = _sensory_hardcoded_response(state, menu)
 
-        await query.edit_message_text("✓")
-        await query.message.reply_text(response)
+        response = _trim_to_telegram_limit(response)
+        try:
+            await query.edit_message_text("✓")
+            await query.message.reply_text(response)
+        except Exception as e:
+            logger.error(f"Failed to send sensory response: {e}")
+            await query.message.reply_text("Что-то пошло не так. Попробуй ещё раз.")
 
     # ── Joy ──
     elif data.startswith("joy_"):

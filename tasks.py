@@ -370,14 +370,8 @@ def _sensory_hardcoded_response(state: str, menu: dict) -> str:
             response = "🟢 **Sensory inputs** (профилактика):\n\n"
             response += "\n".join(f"• {item}" for item in items)
             creativity = menu.get("creativity", [])
-            media = menu.get("media", [])
-            connection = menu.get("connection", [])
             if creativity:
                 response += "\n\n🎨 **Creativity:**\n" + "\n".join(f"• {item}" for item in creativity)
-            if media:
-                response += "\n\n📺 **Media:**\n" + "\n".join(f"• {item}" for item in media)
-            if connection:
-                response += "\n\n💚 **Connection:**\n" + "\n".join(f"• {item}" for item in connection)
         else:
             response = "Сенсорное меню пустое."
     else:
