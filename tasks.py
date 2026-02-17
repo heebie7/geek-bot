@@ -1,13 +1,29 @@
 import re
 import random
+import time
 import hashlib
 from datetime import datetime, timedelta
 from config import ZONE_EMOJI, PROJECT_EMOJI, PROJECT_HEADERS, ALL_DESTINATIONS, TZ, logger
 from storage import get_writing_file, save_writing_file
 
+# In-memory cache for tasks.md to avoid GitHub API call on every button press
+_tasks_cache = {"content": None, "ts": 0}
+_TASKS_CACHE_TTL = 300  # 5 minutes
+
+
+def _invalidate_tasks_cache():
+    """Reset tasks cache after writes."""
+    _tasks_cache["content"] = None
+    _tasks_cache["ts"] = 0
+
 
 def get_life_tasks() -> str:
-    """Получить задачи из life/tasks.md в Writing workspace."""
+    """Получить задачи из life/tasks.md в Writing workspace (cached 5 min)."""
+    now = time.time()
+    if _tasks_cache["content"] and (now - _tasks_cache["ts"]) < _TASKS_CACHE_TTL:
+        logger.debug("tasks.md served from cache")
+        return _tasks_cache["content"]
+
     content = get_writing_file("life/tasks.md")
     if not content:
         # Создадим файл с базовой структурой если не существует
@@ -33,6 +49,9 @@ def get_life_tasks() -> str:
 """
         save_writing_file("life/tasks.md", default_tasks, "Initialize tasks.md")
         return default_tasks
+
+    _tasks_cache["content"] = content
+    _tasks_cache["ts"] = now
     return content
 
 
@@ -66,7 +85,9 @@ def add_task_to_zone(task: str, destination: str) -> bool:
     else:
         tasks = f"{header}\n- [ ] {task}\n\n" + tasks
 
-    return save_writing_file("life/tasks.md", tasks, f"Add task: {task[:30]}")
+    result = save_writing_file("life/tasks.md", tasks, f"Add task: {task[:30]}")
+    _invalidate_tasks_cache()
+    return result
 
 
 def complete_task(task_line: str) -> bool:
@@ -86,7 +107,9 @@ def complete_task(task_line: str) -> bool:
     replacement = f"- [x] {task_line} ✅ {today}"
     tasks = tasks.replace(search, replacement, 1)  # Только первое вхождение
 
-    return save_writing_file("life/tasks.md", tasks, f"Complete: {task_line[:30]}")
+    result = save_writing_file("life/tasks.md", tasks, f"Complete: {task_line[:30]}")
+    _invalidate_tasks_cache()
+    return result
 
 
 async def suggest_zone_for_task(task: str) -> str:
