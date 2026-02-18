@@ -808,10 +808,22 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         sleep = whoop_client.format_sleep_today()
         strain_text = ""
         if cycle:
-            boxed = "да" if strain >= 5 else "нет"
-            strain_text = f"\nStrain: {strain} (бокс: {boxed})"
+            strain_text = f"\nStrain: {strain}"
 
-        data_text = f"{recovery}\n\n{sleep}{strain_text}"
+        # Real workouts (today + yesterday, since today might not have synced)
+        workouts_today = whoop_client.get_workouts_today()
+        workouts_yesterday = whoop_client.get_workouts_yesterday()
+        wo_text = ""
+        if workouts_today:
+            wo_names = [wo.get("sport_name", "?") for wo in workouts_today]
+            wo_text += f"\nТренировки сегодня: {', '.join(wo_names)}"
+        if workouts_yesterday:
+            wo_names = [wo.get("sport_name", "?") for wo in workouts_yesterday]
+            wo_text += f"\nТренировки вчера: {', '.join(wo_names)}"
+        if not workouts_today and not workouts_yesterday:
+            wo_text = "\nТренировки: нет за 2 дня"
+
+        data_text = f"{recovery}\n\n{sleep}{strain_text}{wo_text}"
 
         if motivations:
             prompt = f"""Данные WHOOP:
@@ -819,16 +831,16 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human.
 
-ИСПОЛЬЗУЙ ЭТИ ФРАЗЫ (адаптируй числа под данные выше):
+Если подходят, используй 1-2 из этих фраз (подставь числа из данных):
 {motivations}
 
-Инструкции:
+Что учесть:
 - Сначала выведи данные как есть
-- Потом добавь 2-3 предложения комментария, используя фразы выше
-- Подставь реальные числа из данных
+- Потом 3-5 предложений комментария
+- Если данные показывают тренировки вчера/сегодня — учти это, не ругай за лень
 - Без эмодзи. На русском."""
 
-            text = await get_llm_response(prompt, mode="geek", max_tokens=600, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+            text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
             text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         else:
             text = data_text

@@ -338,10 +338,11 @@ class WhoopClient:
         recovery_score = score.get("recovery_score")
         rhr = score.get("resting_heart_rate")
         hrv = score.get("hrv_rmssd_milli")
+        spo2 = score.get("spo2_percentage")
+        skin_temp = score.get("skin_temp_celsius")
 
         parts = ["WHOOP Recovery"]
         if recovery_score is not None:
-            # Color indicator
             if recovery_score >= 67:
                 indicator = "green"
             elif recovery_score >= 34:
@@ -352,8 +353,11 @@ class WhoopClient:
         if rhr is not None:
             parts.append(f"RHR: {rhr} bpm")
         if hrv is not None:
-            hrv_ms = round(hrv, 1)
-            parts.append(f"HRV: {hrv_ms} ms")
+            parts.append(f"HRV: {round(hrv, 1)} ms")
+        if spo2 is not None:
+            parts.append(f"SpO2: {spo2}%")
+        if skin_temp is not None:
+            parts.append(f"Skin temp: {round(skin_temp, 1)}°C")
 
         return "\n".join(parts)
 
@@ -380,13 +384,36 @@ class WhoopClient:
 
         perf = score.get("sleep_performance_percentage")
         efficiency = score.get("sleep_efficiency_percentage")
+        consistency = score.get("sleep_consistency_percentage")
+        resp_rate = score.get("respiratory_rate")
+        awake_ms = stage.get("total_awake_time_milli", 0)
+        awake_min = round(awake_ms / 60_000) if awake_ms else 0
+        disturbances = stage.get("disturbance_count")
 
         parts = [f"Sleep: {actual_h}h (in bed {in_bed_h}h)"]
         if perf is not None:
             parts.append(f"Performance: {perf}%")
         if efficiency is not None:
             parts.append(f"Efficiency: {efficiency}%")
+        if consistency is not None:
+            parts.append(f"Consistency: {consistency}%")
         parts.append(f"REM: {rem_min} min, Deep: {deep_min} min, Light: {light_min} min")
+        if awake_min or disturbances:
+            awake_line = f"Awake: {awake_min} min"
+            if disturbances is not None:
+                awake_line += f", disturbances: {disturbances}"
+            parts.append(awake_line)
+        if resp_rate is not None:
+            parts.append(f"Respiratory rate: {round(resp_rate, 1)} rpm")
+
+        # Sleep need
+        sleep_needed = score.get("sleep_needed", {})
+        if sleep_needed:
+            base_h = round(sleep_needed.get("baseline_milli", 0) / 3_600_000, 1)
+            debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
+            strain_need_h = round(sleep_needed.get("need_from_recent_strain_milli", 0) / 3_600_000, 1)
+            total_need = round(base_h + debt_h + strain_need_h, 1)
+            parts.append(f"Sleep need: {total_need}h (base {base_h}h + debt {debt_h}h + strain {strain_need_h}h)")
 
         return "\n".join(parts)
 
