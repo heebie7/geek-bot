@@ -160,14 +160,30 @@ class WhoopClient:
         return []
 
     def get_sleep_today(self) -> dict | None:
-        """Get last night's sleep."""
+        """Get last night's primary sleep (not naps)."""
         now = datetime.now(TZ)
         start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
         data = self._api_get("/v2/activity/sleep", params={
             "start": start,
-            "limit": 1,
+            "limit": 5,
         })
         if data and data.get("records"):
+            # Debug: log all sleep records to diagnose data discrepancies
+            for r in data["records"]:
+                ss = r.get("score", {}).get("stage_summary", {})
+                logger.info(
+                    f"Sleep record: nap={r.get('nap')}, start={r.get('start')}, "
+                    f"rem={ss.get('total_rem_sleep_time_milli', 0) // 60000}min, "
+                    f"deep={ss.get('total_slow_wave_sleep_time_milli', 0) // 60000}min, "
+                    f"light={ss.get('total_light_sleep_time_milli', 0) // 60000}min, "
+                    f"awake={ss.get('total_awake_time_milli', 0) // 60000}min, "
+                    f"in_bed={ss.get('total_in_bed_time_milli', 0) // 60000}min"
+                )
+            # Return first non-nap record (primary sleep)
+            for r in data["records"]:
+                if not r.get("nap", False):
+                    return r
+            # Fallback: return first record if all are naps
             return data["records"][0]
         return None
 
@@ -196,15 +212,15 @@ class WhoopClient:
         return []
 
     def get_sleep_week(self) -> list:
-        """Get last 7 days of sleep."""
+        """Get last 7 days of primary sleep (not naps)."""
         now = datetime.now(TZ)
         start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0).isoformat()
         data = self._api_get("/v2/activity/sleep", params={
             "start": start,
-            "limit": 7,
+            "limit": 20,  # more than 7 to account for naps
         })
         if data and data.get("records"):
-            return data["records"]
+            return [r for r in data["records"] if not r.get("nap", False)]
         return []
 
     def get_cycle_yesterday(self) -> dict | None:
