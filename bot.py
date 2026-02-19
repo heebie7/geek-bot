@@ -713,6 +713,9 @@ Strain вчера: {strain}
 Тренировки вчера: {wo_text}
 Тренд: {trend} ({prev_avg}% → {recovery}%)"""
 
+        if workouts_yesterday and any("box" in w.lower() for w in workouts_yesterday):
+            data_summary += "\nВчера был бокс — ожидаемое снижение recovery на 2-3 дня"
+
         feeling_text = {
             "great": "отлично",
             "ok": "норм",

@@ -81,6 +81,10 @@ Optional: `GEMINI_MODEL`, `GEMINI_PRO_MODEL`, `OPENAI_MODEL`
 
 WHOOP tokens (access + refresh) are in `whoop_tokens.json` on GitHub, not in env vars.
 
+## Files to IGNORE
+
+- **`bot_original.py`** — old backup, NOT used in production. Do NOT read, edit, or grep. Waste of tokens.
+
 ## Common pitfalls
 
 - **`load_dotenv()` without `override=True`:** Won't override existing env vars. On Railway this is fine (vars set directly). Locally can cause issues if env already has empty values.
