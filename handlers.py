@@ -840,7 +840,7 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 - Если данные показывают тренировки вчера/сегодня — учти это, не ругай за лень
 - Без эмодзи. На русском."""
 
-            text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+            text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
             text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         else:
             text = data_text

@@ -738,7 +738,7 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
 - Если human сказала "{feeling_text}" и данные расходятся — обрати внимание коротко
 - Без эмодзи. На русском. 4-6 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=700, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         await query.edit_message_text(text)
