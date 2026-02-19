@@ -64,12 +64,13 @@ from handlers import (
     myid_command,
     check_reminders,
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
-    whoop_weekly_summary, monday_review,
+    whoop_weekly_summary, monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_photo_note, handle_message,
     income_command, process_command, handle_csv_upload,
 )
 from meal_data import generate_weekly_menu
+from whoop import whoop_client
 
 
 # ── Access control middleware ────────────────────────────────────────
@@ -674,6 +675,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         feeling = data.replace("morning_", "")
 
         morning_data = context.bot_data.get(f"morning_{query.message.chat.id}", {})
+
+        # Re-fetch if data lost (bot restarted between morning message and button click)
+        if not morning_data:
+            try:
+                morning_data = get_morning_whoop_data()
+                logger.info("Re-fetched morning WHOOP data (bot_data was empty after restart)")
+            except Exception as e:
+                logger.error(f"Failed to re-fetch morning data: {e}")
+                morning_data = {}
+
         sleep_hours = morning_data.get("sleep_hours", 0)
         strain = morning_data.get("strain", 0)
         recovery = morning_data.get("recovery", 0)
@@ -695,8 +706,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         color = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
         wo_text = ", ".join(workouts_yesterday) if workouts_yesterday else "нет"
+        fmt = whoop_client.format_hours_min
         data_summary = f"""Recovery: {recovery}% ({color})
-Сон: {sleep_hours}h
+Сон: {fmt(sleep_hours)}
 Strain вчера: {strain}
 Тренировки вчера: {wo_text}
 Тренд: {trend} ({prev_avg}% → {recovery}%)"""

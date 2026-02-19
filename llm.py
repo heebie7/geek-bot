@@ -328,7 +328,7 @@ def _get_whoop_context() -> str:
             actual_h = round((rem + deep + light) / 3_600_000, 1)
             perf = ss.get("sleep_performance_percentage")
             eff = ss.get("sleep_efficiency_percentage")
-            sleep_line = f"Сон: {actual_h}h (performance {perf}%"
+            sleep_line = f"Сон: {whoop_client.format_hours_min(actual_h)} (performance {perf}%"
             if eff is not None:
                 sleep_line += f", efficiency {eff}%"
             sleep_line += ")"
@@ -338,7 +338,7 @@ def _get_whoop_context() -> str:
             if sleep_needed:
                 debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
                 if debt_h > 0:
-                    parts.append(f"Sleep debt: {debt_h}h")
+                    parts.append(f"Sleep debt: {whoop_client.format_hours_min(debt_h)}")
 
         # Strain
         cycle = whoop_client.get_cycle_today()

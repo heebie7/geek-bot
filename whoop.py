@@ -326,6 +326,19 @@ class WhoopClient:
         """Get user profile."""
         return self._api_get("/v2/user/profile/basic")
 
+    # === Utilities ===
+
+    @staticmethod
+    def format_hours_min(hours: float) -> str:
+        """Convert decimal hours to 'Xh Ymin' format. 7.9 -> '7h 54min'."""
+        if not hours:
+            return "0h"
+        h = int(hours)
+        m = round((hours - h) * 60)
+        if m == 0:
+            return f"{h}h"
+        return f"{h}h {m}min"
+
     # === Formatted output ===
 
     def format_recovery_today(self) -> str:
@@ -390,7 +403,7 @@ class WhoopClient:
         awake_min = round(awake_ms / 60_000) if awake_ms else 0
         disturbances = stage.get("disturbance_count")
 
-        parts = [f"Sleep: {actual_h}h (in bed {in_bed_h}h)"]
+        parts = [f"Sleep: {self.format_hours_min(actual_h)} (in bed {self.format_hours_min(in_bed_h)})"]
         if perf is not None:
             parts.append(f"Performance: {perf}%")
         if efficiency is not None:
@@ -413,7 +426,7 @@ class WhoopClient:
             debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
             strain_need_h = round(sleep_needed.get("need_from_recent_strain_milli", 0) / 3_600_000, 1)
             total_need = round(base_h + debt_h + strain_need_h, 1)
-            parts.append(f"Sleep need: {total_need}h (base {base_h}h + debt {debt_h}h + strain {strain_need_h}h)")
+            parts.append(f"Sleep need: {self.format_hours_min(total_need)} (base {self.format_hours_min(base_h)} + debt {self.format_hours_min(debt_h)} + strain {self.format_hours_min(strain_need_h)})")
 
         return "\n".join(parts)
 

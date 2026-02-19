@@ -683,7 +683,7 @@ def log_whoop_data():
                 eff = ss.get("sleep_efficiency_percentage")
                 rem_min = round(rem_ms / 60_000)
                 deep_min = round(deep_ms / 60_000)
-                entry_parts.append(f"- Sleep: {actual_h}h (perf {perf}%, eff {eff}%)")
+                entry_parts.append(f"- Sleep: {whoop_client.format_hours_min(actual_h)} (perf {perf}%, eff {eff}%)")
                 entry_parts.append(f"- REM: {rem_min} min, Deep: {deep_min} min")
             if body:
                 w = body.get("weight_kilogram") or body.get("body_mass_kg")
@@ -869,6 +869,53 @@ async def sleep_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Sleep reminder error: {e}")
 
 
+def get_morning_whoop_data() -> dict:
+    """Collect morning WHOOP data for callback handler.
+
+    Returns dict with keys: sleep_hours, strain, recovery, trend,
+    prev_avg, workouts_yesterday. Used by whoop_morning_recovery()
+    to store in bot_data, and by morning callback to re-fetch if
+    bot was restarted between message and button click.
+    """
+    rec = whoop_client.get_recovery_today()
+    sleep = whoop_client.get_sleep_today()
+    cycle_yesterday = whoop_client.get_cycle_yesterday()
+    trend = whoop_client.get_trend_3_days()
+
+    sleep_hours = 0
+    strain = 0
+    recovery_score = 0
+
+    if sleep:
+        ss = sleep.get("score", {})
+        stage = ss.get("stage_summary", {})
+        rem = stage.get("total_rem_sleep_time_milli", 0)
+        deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+        light = stage.get("total_light_sleep_time_milli", 0)
+        sleep_hours = round((rem + deep + light) / 3_600_000, 1)
+
+    if rec:
+        recovery_score = rec.get("score", {}).get("recovery_score", 0) or 0
+
+    if cycle_yesterday:
+        strain = round(cycle_yesterday.get("score", {}).get("strain", 0), 1)
+
+    workouts_yesterday = whoop_client.get_workouts_yesterday()
+    wo_names = [wo.get("sport_name", "?") for wo in workouts_yesterday] if workouts_yesterday else []
+
+    trend_direction = trend.get("direction", "stable") if trend else "stable"
+    prev_avg = trend.get("prev_avg") if trend else None
+
+    return {
+        "sleep_hours": sleep_hours,
+        "strain": strain,
+        "recovery": recovery_score,
+        "trend": trend_direction,
+        "prev_avg": prev_avg,
+        "workouts_yesterday": wo_names,
+    }
+
+
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send morning recovery notification with feeling buttons."""
     job = context.job
@@ -909,7 +956,8 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             rem_min = round(rem / 60_000) if rem else 0
             deep_min = round(deep / 60_000) if deep else 0
 
-            sleep_line = f"Сон: {sleep_hours}h (in bed {in_bed_h}h, performance {perf}%"
+            fmt = whoop_client.format_hours_min
+            sleep_line = f"Сон: {fmt(sleep_hours)} (in bed {fmt(in_bed_h)}, performance {perf}%"
             if eff is not None:
                 sleep_line += f", efficiency {eff}%"
             sleep_line += ")"
@@ -930,7 +978,7 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
                 debt_h = round(sleep_needed.get("need_from_sleep_debt_milli", 0) / 3_600_000, 1)
                 strain_need_h = round(sleep_needed.get("need_from_recent_strain_milli", 0) / 3_600_000, 1)
                 total_need = round(base_h + debt_h + strain_need_h, 1)
-                data_parts.append(f"Потребность во сне: {total_need}h (база {base_h}h + долг {debt_h}h + strain {strain_need_h}h)")
+                data_parts.append(f"Потребность во сне: {fmt(total_need)} (база {fmt(base_h)} + долг {fmt(debt_h)} + strain {fmt(strain_need_h)})")
 
             if resp_rate is not None:
                 data_parts.append(f"Respiratory rate: {round(resp_rate, 1)} rpm")
@@ -982,17 +1030,17 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         data_str = "\n".join(data_parts) if data_parts else "Нет данных"
 
-        # Store data for callback handler
+        # Store data for callback handler (re-fetched via get_morning_whoop_data() if bot restarts)
         if not hasattr(context, 'bot_data'):
             context.bot_data = {}
-        wo_names = [wo.get("sport_name", "?") for wo in workouts_yesterday] if workouts_yesterday else []
+        wo_name_list = [wo.get("sport_name", "?") for wo in workouts_yesterday] if workouts_yesterday else []
         context.bot_data[f"morning_{chat_id}"] = {
             "sleep_hours": sleep_hours,
             "strain": strain,
             "recovery": recovery_score,
             "trend": trend_direction,
             "prev_avg": prev_avg,
-            "workouts_yesterday": wo_names,
+            "workouts_yesterday": wo_name_list,
         }
 
         # Build message with feeling buttons
@@ -1100,7 +1148,8 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
                 min_sleep = min(sleep_hours)
                 max_sleep = max(sleep_hours)
                 under_7 = sum(1 for h in sleep_hours if h < 7)
-                data_parts.append(f"Сон avg: {avg_sleep}h (min {min_sleep}h, max {max_sleep}h), дней < 7h: {under_7}/{len(sleep_hours)}")
+                fmt = whoop_client.format_hours_min
+                data_parts.append(f"Сон avg: {fmt(avg_sleep)} (min {fmt(min_sleep)}, max {fmt(max_sleep)}), дней < 7h: {under_7}/{len(sleep_hours)}")
             if rem_mins and deep_mins:
                 data_parts.append(f"Фазы avg: REM {round(sum(rem_mins)/len(rem_mins))}min, Deep {round(sum(deep_mins)/len(deep_mins))}min")
             if sleep_perfs:
