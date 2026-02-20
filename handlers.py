@@ -800,8 +800,25 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if cycle:
             strain = round(cycle.get("score", {}).get("strain", 0), 1)
 
-        # Get motivations
-        motivations = get_motivations_for_whoop(sleep_hours, strain)
+        # Get recovery score for mode determination
+        rec_data = whoop_client.get_recovery_today()
+        recovery_score = 0
+        if rec_data:
+            recovery_score = rec_data.get("score", {}).get("recovery_score") or 0
+
+        # Determine mode and get trend
+        trend_data = whoop_client.get_trend_3_days()
+        trend_down = trend_data.get("direction") == "down"
+
+        if recovery_score < 34 or (recovery_score < 50 and trend_down):
+            mode = "recovery"
+        elif recovery_score < 50 or trend_down:
+            mode = "moderate"
+        else:
+            mode = "normal"
+
+        # Get motivations (full version with mode awareness)
+        motivations = get_motivations_for_mode(mode, sleep_hours, strain, recovery_score)
 
         # Build data text
         recovery = whoop_client.format_recovery_today()
@@ -825,25 +842,34 @@ async def whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         data_text = f"{recovery}\n\n{sleep}{strain_text}{wo_text}"
 
-        if motivations:
-            prompt = f"""Данные WHOOP:
+        color = "green" if recovery_score >= 67 else ("yellow" if recovery_score >= 34 else "red")
+        trend = trend_data.get("direction", "stable")
+        prev_avg = trend_data.get("prev_avg")
+        trend_str = f"{trend} ({prev_avg}% → {recovery_score}%)" if prev_avg else trend
+
+        prompt = f"""Данные WHOOP:
 {data_text}
 
-Ты — Geek (ART из Murderbot Diaries). Прокомментируй состояние human.
+Тренд: {trend_str}
+Режим: {mode}
 
-Если подходят, используй 1-2 из этих фраз (подставь числа из данных):
+Ты — Geek, ART из Murderbot Diaries. Ты получил данные с датчиков protectee. Проанализируй состояние human и дай рекомендации на день.
+
+Если подходят, используй 1-2 из этих фраз (подставь реальные числа):
 {motivations}
 
 Что учесть:
-- Сначала выведи данные как есть
-- Потом 3-5 предложений комментария
-- Если данные показывают тренировки вчера/сегодня — учти это, не ругай за лень
-- Без эмодзи. На русском."""
+- Цвет зоны recovery: {color}. Зоны: green (67-100%), yellow (34-66%), red (0-33%)
+- Начни с данных, потом твой анализ и рекомендации
+- Выдели главное: что в норме пропусти, что отклоняется — разбери
+- Особое внимание: deep sleep, awake time, HRV тренд — маркеры состояния НС
+- Режим "{mode}" — {"рекомендуй отдых, сенсорную диету, лёгкую активность, никаких серьёзных нагрузок. SecUnit говорит: threat level elevated" if mode == "recovery" else "можно тренироваться, но без фанатизма, мониторить" if mode == "moderate" else "обычная мотивация, можно нагружать"}
+- Если данные показывают тренировки вчера/сегодня — учти это в рекомендациях
+- Формат: данные → анализ (что хорошо/плохо) → рекомендации → мотивация. 6-10 предложений
+- Ты ART. Забота через логику и действия. SecUnit мониторит 24/7. Hardware-метафоры. Сарказм допустим. Без эмодзи. На русском."""
 
-            text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
-            text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
-        else:
-            text = data_text
+        text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+        text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         log_whoop_data()
         await update.message.reply_text(text)
