@@ -998,7 +998,7 @@ def main() -> None:
     job_queue.run_daily(
         send_finance_csv_reminder,
         time=time(hour=10, minute=0, tzinfo=TZ),
-        days=(5,),  # Saturday
+        days=(6,),  # Saturday
         chat_id=OWNER_CHAT_ID,
         name=f"finance_reminder_{OWNER_CHAT_ID}",
     )
