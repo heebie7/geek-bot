@@ -21,7 +21,40 @@ from config import (
     REMINDERS_FILE, FAMILY_FILE, MUTE_FILE,
     CALENDAR_ID, SCOPES,
     TZ, logger,
+    MORNING_CACHE_FILE,
 )
+
+
+# === MORNING WHOOP CACHE ===
+
+def save_morning_cache(chat_id: int, data: dict) -> None:
+    """Сохранить данные утреннего WHOOP-отчёта в файл.
+
+    Переживает рестарт бота, но не redeployment Railway.
+    """
+    try:
+        cache = {}
+        if os.path.exists(MORNING_CACHE_FILE):
+            with open(MORNING_CACHE_FILE, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+        cache[str(chat_id)] = data
+        with open(MORNING_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"morning_cache save error: {e}")
+
+
+def load_morning_cache(chat_id: int) -> dict:
+    """Загрузить данные утреннего WHOOP-отчёта из файла."""
+    try:
+        if not os.path.exists(MORNING_CACHE_FILE):
+            return {}
+        with open(MORNING_CACHE_FILE, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+        return cache.get(str(chat_id), {})
+    except Exception as e:
+        logger.error(f"morning_cache load error: {e}")
+        return {}
 
 
 # === FILE I/O ===

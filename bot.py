@@ -30,7 +30,7 @@ from config import (
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
 )
 from prompts import SENSORY_LEYA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
-from storage import load_file, get_week_events, is_muted
+from storage import load_file, get_week_events, is_muted, load_morning_cache
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
     suggest_zone_for_task, create_rawnote,
@@ -678,12 +678,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # Re-fetch if data lost (bot restarted between morning message and button click)
         if not morning_data:
-            try:
-                morning_data = get_morning_whoop_data()
-                logger.info("Re-fetched morning WHOOP data (bot_data was empty after restart)")
-            except Exception as e:
-                logger.error(f"Failed to re-fetch morning data: {e}")
-                morning_data = {}
+            # 1. Try file cache (survives bot restarts)
+            morning_data = load_morning_cache(query.message.chat.id)
+            if morning_data:
+                logger.info("Loaded morning WHOOP data from file cache (bot_data was empty after restart)")
+            else:
+                # 2. Last resort: live API re-fetch
+                try:
+                    morning_data = get_morning_whoop_data()
+                    logger.info("Re-fetched morning WHOOP data from API (cache empty)")
+                except Exception as e:
+                    logger.error(f"Failed to re-fetch morning data: {e}")
+                    morning_data = {}
 
         sleep_hours = morning_data.get("sleep_hours", 0)
         strain = morning_data.get("strain", 0)

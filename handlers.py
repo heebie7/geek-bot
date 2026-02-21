@@ -27,7 +27,7 @@ from storage import (
     load_file, get_writing_file, save_writing_file,
     get_week_events, register_family_member, get_family_chat_id,
     add_reminder, get_due_reminders, parse_remind_time,
-    get_reminders, is_muted,
+    get_reminders, is_muted, save_morning_cache,
 )
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -1060,7 +1060,7 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         if not hasattr(context, 'bot_data'):
             context.bot_data = {}
         wo_name_list = [wo.get("sport_name", "?") for wo in workouts_yesterday] if workouts_yesterday else []
-        context.bot_data[f"morning_{chat_id}"] = {
+        morning_payload = {
             "sleep_hours": sleep_hours,
             "strain": strain,
             "recovery": recovery_score,
@@ -1068,6 +1068,8 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             "prev_avg": prev_avg,
             "workouts_yesterday": wo_name_list,
         }
+        context.bot_data[f"morning_{chat_id}"] = morning_payload
+        save_morning_cache(chat_id, morning_payload)
 
         # Build message with feeling buttons
         message = f"{data_str}\n\nКак себя чувствуешь?"
