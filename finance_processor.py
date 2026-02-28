@@ -11,7 +11,7 @@ from pathlib import Path
 from config import logger
 from storage import list_writing_dir, get_writing_file, save_writing_file
 from process import (
-    parse_zen, parse_paypal, parse_credo_sms,
+    parse_zen, parse_paypal, parse_credo_sms, parse_wolt,
     fetch_floatrates, set_rates, load_categories,
     generate_monthly_summary, generate_yearly_summary,
     CSV_FIELDS, FALLBACK_RATES,
@@ -28,37 +28,77 @@ def _load_local_categories():
 
 def _download_raw_files(year: str) -> dict:
     """Скачать raw CSV из GitHub, вернуть {source_type: content_string}."""
+    import re
+
     dir_path = f"finance/raw/{year}"
     files = list_writing_dir(dir_path)
     if not files:
         return {}
 
-    raw = {}
+    # Сортируем файлы по типу
+    zen_candidates = {}  # name -> path
+    paypal_files = {}
+    credo_sms = {}
+    wolt_files = {}
+
     for name, path in files.items():
         lower = name.lower()
         if lower.startswith("zen") and lower.endswith(".csv"):
-            source = "zen"
+            zen_candidates[name] = path
         elif (lower.startswith("pp") or lower.startswith("paypal") or lower.startswith("download")) and lower.endswith(".csv"):
-            source = "paypal_files"
+            paypal_files[name] = path
         elif lower.startswith("credo_sms") and lower.endswith(".csv"):
-            source = "credo_sms"
-        else:
-            continue
+            credo_sms[name] = path
+        elif lower.startswith("wolt") and lower.endswith(".csv"):
+            wolt_files[name] = path
 
-        content = get_writing_file(path)
+    raw = {}
+
+    # Zen Money: только последний файл (каждый экспорт — полный дамп)
+    if zen_candidates:
+        def _zen_sort_key(name):
+            m = re.search(r'zen_(\d{4}-\d{2}-\d{2})', name)
+            return (1, m.group(1)) if m else (0, name)
+
+        latest_name = sorted(zen_candidates.keys(), key=_zen_sort_key)[-1]
+        latest_path = zen_candidates[latest_name]
+        content = get_writing_file(latest_path)
         if content:
-            if source == "paypal_files":
-                raw.setdefault("paypal_files", []).append(content)
-                logger.info(f"Downloaded paypal: {name} ({len(content)} bytes)")
-            elif source in raw:
-                # Уже есть данные этого источника — дописываем строки (без заголовка)
-                lines = content.split('\n', 1)
-                if len(lines) > 1:
-                    raw[source] += '\n' + lines[1]
-                logger.info(f"Appended {source}: {name} ({len(content)} bytes)")
+            raw["zen"] = content
+            if len(zen_candidates) > 1:
+                logger.info(f"[zen] {len(zen_candidates)} files found, using latest: {latest_name}")
             else:
-                raw[source] = content
-                logger.info(f"Downloaded {source}: {name} ({len(content)} bytes)")
+                logger.info(f"Downloaded zen: {latest_name} ({len(content)} bytes)")
+
+    # Credo SMS: один файл (последний если несколько)
+    if credo_sms:
+        latest_name = sorted(credo_sms.keys())[-1]
+        content = get_writing_file(credo_sms[latest_name])
+        if content:
+            raw["credo_sms"] = content
+            logger.info(f"Downloaded credo_sms: {latest_name} ({len(content)} bytes)")
+
+    # PayPal: все файлы (дедупликация по transaction ID в парсере)
+    if paypal_files:
+        pp_list = []
+        for name in sorted(paypal_files.keys()):
+            content = get_writing_file(paypal_files[name])
+            if content:
+                pp_list.append(content)
+                logger.info(f"Downloaded paypal: {name} ({len(content)} bytes)")
+        if pp_list:
+            raw["paypal_files"] = pp_list
+
+    # Wolt: все файлы
+    if wolt_files:
+        wolt_list = []
+        for name in sorted(wolt_files.keys()):
+            content = get_writing_file(wolt_files[name])
+            if content:
+                wolt_list.append(content)
+                logger.info(f"Downloaded wolt: {name} ({len(content)} bytes)")
+        if wolt_list:
+            raw["wolt_files"] = wolt_list
 
     return raw
 
@@ -111,6 +151,7 @@ def process_period(period: str) -> str:
     stats = []
     has_credo_sms = False
 
+    # Порядок: Credo SMS → Wolt (заменяет Wolt-строки из Credo) → Zen → PayPal
     if "credo_sms" in raw_files:
         credo_rows = parse_credo_sms(
             io.StringIO(raw_files["credo_sms"]), categories, period,
@@ -118,6 +159,22 @@ def process_period(period: str) -> str:
         has_credo_sms = len(credo_rows) > 0
         stats.append(f"Credo SMS: {len(credo_rows)}")
         all_rows.extend(credo_rows)
+
+    if "wolt_files" in raw_files:
+        wolt_all = []
+        for wolt_content in raw_files["wolt_files"]:
+            wolt_rows = parse_wolt(io.StringIO(wolt_content), categories, period)
+            wolt_all.extend(wolt_rows)
+        if wolt_all:
+            # Удаляем Wolt-строки из Credo SMS — Wolt CSV точнее
+            before = len(all_rows)
+            all_rows = [
+                r for r in all_rows
+                if not (r["source"] == "credo_sms" and "wolt" in r["description"].lower())
+            ]
+            wolt_deduped = before - len(all_rows)
+            stats.append(f"Wolt: {len(wolt_all)} (убрано {wolt_deduped} из Credo SMS)")
+            all_rows.extend(wolt_all)
 
     if "zen" in raw_files:
         zen_rows = parse_zen(

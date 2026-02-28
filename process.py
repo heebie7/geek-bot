@@ -190,10 +190,15 @@ def parse_zen(filepath, categories, target_period):
     - outcome > 0 И income == 0 → расход
     - income > 0 И outcome == 0 → доход
     - outcome > 0 И income > 0 → перевод между счетами
+
+    Дедупликация: Zen Money экспорт иногда содержит дубли.
+    Строки с одинаковым (date, payee, outcome, income, outcomeAccount, incomeAccount) пропускаются.
     """
     rows = []
     cat_map_exp = categories["zen"]["expense"]
     cat_map_inc = categories["zen"]["income"]
+    payee_exp_override = categories["zen"].get("payee_expense_override", {})
+    seen = set()  # для дедупликации
 
     with _open_source(filepath, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=";")
@@ -226,13 +231,19 @@ def parse_zen(filepath, categories, target_period):
             except ValueError:
                 continue
 
+            # Дедупликация: пропускаем строки с идентичными ключевыми полями
+            dedup_key = (date_str, payee, outcome, income, outcome_acc, income_acc)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
             description = payee or comment or category_name or ""
             # Обрезать длинные описания от банков
             description = description.strip()[:80]
 
             # Определяем тип транзакции
             if outcome_val > 0 and income_val > 0:
-                # Перевод между счетами — пропускаем
+                # Перевод между счетами
                 rows.append({
                     "date": date_str,
                     "type": "transfer",
@@ -250,8 +261,22 @@ def parse_zen(filepath, categories, target_period):
                     cat = "transfer"
                     tx_type = "transfer"
                 else:
-                    cat = cat_map_exp.get(category_name, "other_expense")
-                    tx_type = "expense"
+                    if not category_name:
+                        if "Озон" in outcome_acc or "Ozon" in outcome_acc:
+                            cat = "transfer"
+                            tx_type = "transfer"
+                        elif "Tinkoff" in outcome_acc:
+                            cat = "transfer"
+                            tx_type = "transfer"
+                        else:
+                            cat = "other_expense"
+                            tx_type = "expense"
+                    else:
+                        cat = cat_map_exp.get(category_name, "other_expense")
+                        tx_type = "expense"
+                    # Переопределение по payee (приоритет над категорией)
+                    if payee in payee_exp_override:
+                        cat = payee_exp_override[payee]
                 rows.append({
                     "date": date_str,
                     "type": tx_type,
@@ -497,6 +522,74 @@ def parse_credo_sms(filepath, categories, target_period):
     if paypal_skipped > 0:
         print(f"  Credo SMS: пропущено {paypal_skipped} PayPal-операций (есть PayPal CSV)")
 
+    return rows
+
+
+# =============================================================================
+# ПАРСИНГ WOLT CSV
+# =============================================================================
+
+def parse_wolt(filepath, categories, period):
+    """
+    Парсит Wolt CSV (vendor,date,total,currency,items_count,file_name,month,year,category).
+    Сервисные строки (Сервис Wolt, Подписка Wolt+) пропускаются.
+    """
+    wolt_map = categories.get("wolt", {})
+
+    if len(period) == 7:
+        period_month = period
+    else:
+        period_month = None
+
+    rows = []
+    skipped_service = 0
+
+    with _open_source(filepath, encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        for row in reader:
+            if len(row) < 9:
+                continue
+            vendor, date_str, total_str, currency, _, _, month_str, year_str, wolt_cat = row[:9]
+            wolt_cat = wolt_cat.strip()
+
+            if period_month and not date_str.startswith(period_month[:7]):
+                if period_month[:4] != date_str[:4]:
+                    continue
+                if period_month != date_str[:7]:
+                    continue
+            if not period_month and date_str[:4] != period:
+                continue
+
+            if wolt_cat in ("Сервис Wolt", "Подписка Wolt+"):
+                skipped_service += 1
+                continue
+
+            try:
+                amount = float(total_str.replace(",", "."))
+            except Exception:
+                continue
+
+            if amount <= 0:
+                continue
+
+            category = wolt_map.get(wolt_cat, "other_expense")
+            amount_rub = to_rub(amount, currency, date_str)
+
+            rows.append({
+                "date": date_str,
+                "type": "expense",
+                "category": category,
+                "description": vendor[:80],
+                "amount": amount,
+                "currency": currency,
+                "amount_rub": amount_rub,
+                "source": "wolt",
+                "account": "Wolt",
+            })
+
+    if skipped_service:
+        print(f"  Wolt: пропущено {skipped_service} сервисных строк")
     return rows
 
 
