@@ -1071,8 +1071,31 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         context.bot_data[f"morning_{chat_id}"] = morning_payload
         save_morning_cache(chat_id, morning_payload)
 
-        # Build message with feeling buttons
-        message = f"{data_str}\n\nКак себя чувствуешь?"
+        # ── Сообщение 1: LLM анализ + данные + кнопки чувствования ──
+        color = "green" if recovery_score >= 67 else ("yellow" if recovery_score >= 34 else "red")
+        analysis_prompt = f"""Утренние данные WHOOP:
+{data_str}
+
+Ты — Geek (ART из Murderbot Diaries). Дай анализ сна и рекомендации на день.
+
+Что обязательно:
+- Recovery и HRV — что говорят о состоянии НС сейчас (зона {color})
+- Если deep sleep < 60min или awake > 40min — отметить отдельно, что это значит для дня
+- Тренироваться сегодня или нет: конкретный вывод. Если был бокс вчера или deep sleep плохой — учесть
+- Sleep debt — если есть, коротко о влиянии на работу с клиентами
+- Если данные хорошие — сказать прямо, не искать проблемы
+
+Без эмодзи. На русском. 4-6 предложений."""
+
+        analysis_text = await get_llm_response(
+            analysis_prompt,
+            mode="geek",
+            max_tokens=600,
+            skip_context=True,
+            custom_system=WHOOP_HEALTH_SYSTEM,
+            use_pro=True,
+        )
+        analysis_text = re.sub(r'\[SAVE:[^\]]+\]', '', analysis_text).strip()
 
         keyboard = [
             [
@@ -1087,11 +1110,43 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await context.bot.send_message(
             chat_id=chat_id,
-            text=message,
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text=f"{data_str}\n\n{analysis_text}\n\nКак себя чувствуешь?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+        # ── Сообщение 2: мотивация ──
+        if recovery_score < 34 or trend_direction == "down":
+            mode_label = "recovery"
+        elif recovery_score < 67:
+            mode_label = "moderate"
+        else:
+            mode_label = "normal"
+
+        motivations = get_motivations_for_mode(mode_label, sleep_hours, strain, recovery_score)
+
+        motivation_prompt = f"""Recovery: {recovery_score}% ({color}), сон: {sleep_hours:.1f}h, тренд: {trend_direction}.
+
+Ты — Geek (ART из Murderbot Diaries). Дай короткую мотивацию на день.
+Режим: {mode_label}.
+
+Используй 1-2 подходящих фразы (подставь реальные числа из данных):
+{motivations}
+
+Без эмодзи. На русском. 2-3 предложения. Не повторяй анализ — только вперёд."""
+
+        motivation_text = await get_llm_response(
+            motivation_prompt,
+            mode="geek",
+            max_tokens=300,
+            skip_context=True,
+            custom_system=WHOOP_HEALTH_SYSTEM,
+            use_pro=False,
+        )
+        motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
+        await context.bot.send_message(chat_id=chat_id, text=motivation_text)
+
         log_whoop_data()
-        logger.info(f"Sent WHOOP morning overview to {chat_id}")
+        logger.info(f"Sent WHOOP morning overview (2 messages) to {chat_id}")
     except Exception as e:
         logger.error(f"WHOOP morning notification failed: {e}")
 
@@ -1252,12 +1307,43 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
 Не выдумывай персонажей, которых нет в предложенных фразах.
 Без эмодзи. На русском. 8-12 предложений."""
 
+        # ── Сообщение 1: полный недельный анализ ──
         text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
-        # Strip SAVE tags — LLM sometimes generates them in scheduled messages
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
         await context.bot.send_message(chat_id=chat_id, text=text)
+
+        # ── Сообщение 2: мотивация на неделю ──
+        weekly_color = "green" if avg_recovery >= 67 else ("yellow" if avg_recovery >= 34 else "red")
+        wo_summary_text = ""
+        if week_workouts:
+            from collections import Counter
+            sport_counts_motiv = Counter(wo.get("sport_name", "Unknown") for wo in week_workouts)
+            wo_summary_text = ", ".join(f"{name} x{count}" for name, count in sport_counts_motiv.most_common())
+        else:
+            wo_summary_text = "тренировок не было"
+
+        motivation_weekly_prompt = f"""Неделя позади. Recovery avg: {avg_recovery}% ({weekly_color}), тренировки: {wo_summary_text}.
+
+Ты — Geek (ART из Murderbot Diaries). Дай мотивацию на новую неделю.
+
+Используй 1-2 подходящих фразы:
+{weekly_motivations}
+
+Без эмодзи. На русском. 3-4 предложения. Смотри вперёд, а не назад."""
+
+        motivation_weekly_text = await get_llm_response(
+            motivation_weekly_prompt,
+            mode="geek",
+            max_tokens=400,
+            skip_context=True,
+            custom_system=WHOOP_HEALTH_SYSTEM,
+            use_pro=False,
+        )
+        motivation_weekly_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_weekly_text).strip()
+        await context.bot.send_message(chat_id=chat_id, text=motivation_weekly_text)
+
         log_whoop_data()
-        logger.info(f"Sent WHOOP weekly summary to {chat_id}")
+        logger.info(f"Sent WHOOP weekly summary (2 messages) to {chat_id}")
     except Exception as e:
         logger.error(f"WHOOP weekly summary failed: {e}")
 
