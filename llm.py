@@ -16,6 +16,59 @@ from whoop import whoop_client
 _motivations_cache = None
 
 
+def _is_truncated(response) -> bool:
+    """Check if Gemini response was truncated due to output token limit."""
+    if not response or not response.candidates:
+        return False
+    finish = getattr(response.candidates[0], 'finish_reason', None)
+    return 'MAX_TOKENS' in str(finish).upper() if finish else False
+
+
+def _continue_generation(client, model: str, system: str, original_contents: list,
+                         initial_text: str, max_tokens: int, max_continuations: int = 3) -> str:
+    """Continue generating when Gemini response was truncated.
+
+    Sends the accumulated text back as model turn and asks to continue.
+    Recursively continues up to max_continuations times.
+    """
+    full_text = initial_text
+
+    for i in range(max_continuations):
+        cont_contents = list(original_contents)
+        cont_contents.append(genai.types.Content(
+            role="model",
+            parts=[genai.types.Part(text=full_text)]
+        ))
+        cont_contents.append(genai.types.Content(
+            role="user",
+            parts=[genai.types.Part(text="Продолжай с того места, где остановился. Не повторяй уже написанное.")]
+        ))
+
+        try:
+            cont_response = client.models.generate_content(
+                model=model,
+                contents=cont_contents,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            if not cont_response.text:
+                logger.info(f"Continuation {i+1}: empty response, stopping")
+                break
+
+            full_text += cont_response.text
+            logger.info(f"Continuation {i+1}: +{len(cont_response.text)} chars, total={len(full_text)}")
+
+            if not _is_truncated(cont_response):
+                break
+        except Exception as e:
+            logger.warning(f"Continuation {i+1} failed: {e}")
+            break
+
+    return full_text
+
+
 def get_motivations() -> str:
     """Get motivations from Writing repo context/motivations.md. Cached."""
     global _motivations_cache
@@ -272,6 +325,16 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
             if response.text:
                 finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
                 logger.info(f"Gemini response OK ({model}), finish_reason={finish}, len={len(response.text)}")
+
+                # Auto-continue if response was truncated
+                if _is_truncated(response):
+                    logger.warning(f"Gemini response truncated (finish_reason={finish}), auto-continuing...")
+                    full_text = _continue_generation(
+                        gemini_client, model, system, gemini_contents,
+                        response.text, max_tokens,
+                    )
+                    return full_text
+
                 return response.text
             else:
                 finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
