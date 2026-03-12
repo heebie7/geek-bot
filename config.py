@@ -130,6 +130,18 @@ PROJECT_HEADERS = {
 # Combined: zones + projects for display
 ALL_DESTINATIONS = {**ZONE_EMOJI, **PROJECT_EMOJI}
 
+# ── Family name aliases (Russian name forms → Telegram username) ──────
+
+FAMILY_ALIASES = {
+    "тима": "karix_2",
+    "тиме": "karix_2",
+    "тимоше": "karix_2",
+    "тимофей": "karix_2",
+    "тимофею": "karix_2",
+    "тимке": "karix_2",
+    "т": "karix_2",
+}
+
 # ── Reminder messages ─────────────────────────────────────────────────
 
 REMINDERS = {

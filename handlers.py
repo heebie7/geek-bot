@@ -20,7 +20,7 @@ from config import (
     USER_CONTEXT_FILE, TASKS_FILE,
     ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI,
-    REMINDERS, SLEEP_PROMPTS,
+    REMINDERS, SLEEP_PROMPTS, FAMILY_ALIASES,
 )
 from prompts import SENSORY_LEYA_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import (
@@ -408,6 +408,101 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"Напомню {time_str}:\n{reminder_text}")
     else:
         await update.message.reply_text("Не удалось сохранить напоминание.")
+
+
+def parse_remind_tag(response: str) -> tuple:
+    """Extract [REMIND:name:text] tag from LLM response.
+
+    Returns (clean_response, name, remind_text) or (response, None, None).
+    """
+    pattern = r'\[REMIND:([^:]+):([^\]]+)\]'
+    match = re.search(pattern, response)
+    if match:
+        name = match.group(1).strip().lower()
+        remind_text = match.group(2).strip()
+        clean = response[:match.start()].strip()
+        return (clean, name, remind_text)
+    return (response, None, None)
+
+
+def get_remind_time_keyboard(remind_text: str, target_username: str) -> InlineKeyboardMarkup:
+    """Inline keyboard with time options for a reminder."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Через 30 мин", callback_data=f"remtime_30m_{target_username}"),
+            InlineKeyboardButton("Через 1 час", callback_data=f"remtime_1h_{target_username}"),
+        ],
+        [
+            InlineKeyboardButton("Через 2 часа", callback_data=f"remtime_2h_{target_username}"),
+            InlineKeyboardButton("Завтра 10:00", callback_data=f"remtime_tom10_{target_username}"),
+        ],
+        [
+            InlineKeyboardButton("Завтра 14:00", callback_data=f"remtime_tom14_{target_username}"),
+            InlineKeyboardButton("Отмена", callback_data="remtime_cancel"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def handle_remind_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle time selection for LLM-routed reminders."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "remtime_cancel":
+        await query.edit_message_text(query.message.text + "\n\n— Отменено.")
+        return
+
+    # Parse: remtime_{time_code}_{username}
+    parts = data.split("_", 2)
+    if len(parts) < 3:
+        return
+    time_code = parts[1]
+    target_username = parts[2]
+
+    pending = context.user_data.get("pending_remind")
+    if not pending:
+        await query.edit_message_text("Напоминание устарело. Попробуй ещё раз.")
+        return
+
+    remind_text = pending["text"]
+    now = datetime.now(TZ)
+
+    # Calculate remind_at based on time_code
+    if time_code == "30m":
+        remind_at = now + timedelta(minutes=30)
+    elif time_code == "1h":
+        remind_at = now + timedelta(hours=1)
+    elif time_code == "2h":
+        remind_at = now + timedelta(hours=2)
+    elif time_code == "tom10":
+        tomorrow = now + timedelta(days=1)
+        remind_at = tomorrow.replace(hour=10, minute=0, second=0, microsecond=0)
+    elif time_code == "tom14":
+        tomorrow = now + timedelta(days=1)
+        remind_at = tomorrow.replace(hour=14, minute=0, second=0, microsecond=0)
+    else:
+        await query.edit_message_text("Неизвестное время.")
+        return
+
+    target_chat_id = get_family_chat_id(target_username)
+    if not target_chat_id:
+        await query.edit_message_text(f"@{target_username} не зарегистрирован.")
+        return
+
+    from_user = query.from_user.username or query.from_user.first_name
+
+    if add_reminder(target_chat_id, remind_at, remind_text, from_user):
+        time_str = remind_at.strftime("%d.%m в %H:%M")
+        await query.edit_message_text(
+            query.message.text.split("\n\n— Когда")[0] +
+            f"\n\n— Напомню @{target_username} {time_str}: {remind_text}"
+        )
+        context.user_data.pop("pending_remind", None)
+        logger.info(f"LLM-routed reminder set for @{target_username} at {time_str}: {remind_text}")
+    else:
+        await query.edit_message_text("Не удалось сохранить напоминание.")
 
 
 async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1678,6 +1773,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Проверяем есть ли предложение сохранить
     clean_response, save_type, zone_or_title, content = parse_save_tag(response)
 
+    # Проверяем есть ли REMIND-тег
+    remind_response, remind_name, remind_text = parse_remind_tag(clean_response or response)
+    if remind_name:
+        clean_response = remind_response
+
     # Late night: append level-appropriate sleep nudge
     if sleep_level > 0:
         nudge_text = random.choice(REMINDERS["sleep"][sleep_level])
@@ -1724,5 +1824,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             clean_response + suggestion,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+    elif remind_name:
+        # LLM detected a reminder request — resolve name and show time buttons
+        target_username = FAMILY_ALIASES.get(remind_name)
+        if target_username:
+            context.user_data["pending_remind"] = {"text": remind_text}
+            time_kb = get_remind_time_keyboard(remind_text, target_username)
+            await update.message.reply_text(
+                clean_response + f"\n\n— Когда напомнить @{target_username}?",
+                reply_markup=time_kb,
+            )
+        else:
+            # Unknown name — fall back to regular response
+            await update.message.reply_text(
+                clean_response + f"\n\n— Не знаю кто такой «{remind_name}». Добавь в family."
+            )
     else:
         await update.message.reply_text(response)

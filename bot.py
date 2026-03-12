@@ -66,7 +66,7 @@ from handlers import (
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
     whoop_weekly_summary, monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
-    handle_photo_note, handle_message,
+    handle_photo_note, handle_message, handle_remind_callback,
     income_command, process_command, handle_csv_upload,
 )
 from meal_data import generate_weekly_menu
@@ -907,6 +907,9 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
             task_map.pop(task_hash, None)
         else:
             await query.edit_message_text("Не удалось отметить. Задача могла измениться.")
+
+    elif data.startswith("remtime_"):
+        await handle_remind_callback(update, context)
 
     elif data == "cancel_steps":
         context.user_data.pop("pending_steps", None)
