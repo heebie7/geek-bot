@@ -486,7 +486,14 @@ async def handle_remind_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("Неизвестное время.")
         return
 
-    target_chat_id = get_family_chat_id(target_username)
+    # _self = remind sender, otherwise look up family
+    if target_username == "_self":
+        target_chat_id = query.from_user.id
+        display_target = "тебе"
+    else:
+        target_chat_id = get_family_chat_id(target_username)
+        display_target = f"@{target_username}"
+
     if not target_chat_id:
         await query.edit_message_text(f"@{target_username} не зарегистрирован.")
         return
@@ -497,10 +504,10 @@ async def handle_remind_callback(update: Update, context: ContextTypes.DEFAULT_T
         time_str = remind_at.strftime("%d.%m в %H:%M")
         await query.edit_message_text(
             query.message.text.split("\n\n— Когда")[0] +
-            f"\n\n— Напомню @{target_username} {time_str}: {remind_text}"
+            f"\n\n— Напомню {display_target} {time_str}: {remind_text}"
         )
         context.user_data.pop("pending_remind", None)
-        logger.info(f"LLM-routed reminder set for @{target_username} at {time_str}: {remind_text}")
+        logger.info(f"LLM-routed reminder set for {display_target} at {time_str}: {remind_text}")
     else:
         await query.edit_message_text("Не удалось сохранить напоминание.")
 
@@ -1826,12 +1833,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
     elif remind_name:
         # LLM detected a reminder request — resolve name and show time buttons
-        target_username = FAMILY_ALIASES.get(remind_name)
-        if target_username:
+        is_self = remind_name in ("мне", "себе", "себя")
+        if is_self:
+            target_key = "_self"
+            label = "тебе"
+        else:
+            target_key = FAMILY_ALIASES.get(remind_name)
+            label = f"@{target_key}" if target_key else None
+
+        if target_key:
             context.user_data["pending_remind"] = {"text": remind_text}
-            time_kb = get_remind_time_keyboard(remind_text, target_username)
+            time_kb = get_remind_time_keyboard(remind_text, target_key)
             await update.message.reply_text(
-                clean_response + f"\n\n— Когда напомнить @{target_username}?",
+                clean_response + f"\n\n— Когда напомнить {label}?",
                 reply_markup=time_kb,
             )
         else:
