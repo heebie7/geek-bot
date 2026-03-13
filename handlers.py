@@ -48,6 +48,7 @@ from keyboards import (
     get_joy_keyboard, get_joy_items_keyboard,
     get_task_confirm_keyboard, get_destination_keyboard,
     get_priority_keyboard,
+    get_mq_start_keyboard,
 )
 from finance import handle_csv_upload, income_command, process_command  # noqa: F401 — re-exported for bot.py
 from whoop import whoop_client
@@ -444,17 +445,77 @@ def get_remind_time_keyboard(remind_text: str, target_username: str) -> InlineKe
     return InlineKeyboardMarkup(keyboard)
 
 
+def _calc_remind_at(time_code: str) -> datetime:
+    """Calculate remind_at from time code."""
+    now = datetime.now(TZ)
+    if time_code == "30m":
+        return now + timedelta(minutes=30)
+    elif time_code == "1h":
+        return now + timedelta(hours=1)
+    elif time_code == "2h":
+        return now + timedelta(hours=2)
+    elif time_code == "tom10":
+        tomorrow = now + timedelta(days=1)
+        return tomorrow.replace(hour=10, minute=0, second=0, microsecond=0)
+    elif time_code == "tom14":
+        tomorrow = now + timedelta(days=1)
+        return tomorrow.replace(hour=14, minute=0, second=0, microsecond=0)
+    return None
+
+
 async def handle_remind_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle time selection for LLM-routed reminders."""
+    """Handle time and recurring selection for LLM-routed reminders."""
     query = update.callback_query
     await query.answer()
     data = query.data
 
     if data == "remtime_cancel":
-        await query.edit_message_text(query.message.text + "\n\n— Отменено.")
+        context.user_data.pop("pending_remind", None)
+        await query.edit_message_text(query.message.text.split("\n\n—")[0] + "\n\n— Отменено.")
         return
 
-    # Parse: remtime_{time_code}_{username}
+    # Step 2: recurring selection — remrec_{recurring}
+    if data.startswith("remrec_"):
+        recurring = data[7:]  # once / daily / weekdays / weekly
+        if recurring == "once":
+            recurring = None
+
+        pending = context.user_data.get("pending_remind")
+        if not pending or "remind_at" not in pending:
+            await query.edit_message_text("Напоминание устарело. Попробуй ещё раз.")
+            return
+
+        remind_at = datetime.fromisoformat(pending["remind_at"])
+        target_username = pending["target"]
+        remind_text = pending["text"]
+
+        if target_username == "_self":
+            target_chat_id = query.from_user.id
+            display_target = "тебе"
+        else:
+            target_chat_id = get_family_chat_id(target_username)
+            display_target = f"@{target_username}"
+
+        if not target_chat_id:
+            await query.edit_message_text(f"@{target_username} не зарегистрирован.")
+            return
+
+        from_user = query.from_user.username or query.from_user.first_name
+
+        if add_reminder(target_chat_id, remind_at, remind_text, from_user, recurring=recurring):
+            time_str = remind_at.strftime("%d.%m в %H:%M")
+            rec_label = {"daily": " (каждый день)", "weekdays": " (по будням)", "weekly": " (раз в неделю)"}.get(recurring, "")
+            base_text = query.message.text.split("\n\n—")[0]
+            await query.edit_message_text(
+                base_text + f"\n\n— Напомню {display_target} {time_str}: {remind_text}{rec_label}"
+            )
+            context.user_data.pop("pending_remind", None)
+            logger.info(f"Reminder set for {display_target} at {time_str}{rec_label}: {remind_text}")
+        else:
+            await query.edit_message_text("Не удалось сохранить напоминание.")
+        return
+
+    # Step 1: time selection — remtime_{time_code}_{username}
     parts = data.split("_", 2)
     if len(parts) < 3:
         return
@@ -466,50 +527,32 @@ async def handle_remind_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("Напоминание устарело. Попробуй ещё раз.")
         return
 
-    remind_text = pending["text"]
-    now = datetime.now(TZ)
-
-    # Calculate remind_at based on time_code
-    if time_code == "30m":
-        remind_at = now + timedelta(minutes=30)
-    elif time_code == "1h":
-        remind_at = now + timedelta(hours=1)
-    elif time_code == "2h":
-        remind_at = now + timedelta(hours=2)
-    elif time_code == "tom10":
-        tomorrow = now + timedelta(days=1)
-        remind_at = tomorrow.replace(hour=10, minute=0, second=0, microsecond=0)
-    elif time_code == "tom14":
-        tomorrow = now + timedelta(days=1)
-        remind_at = tomorrow.replace(hour=14, minute=0, second=0, microsecond=0)
-    else:
+    remind_at = _calc_remind_at(time_code)
+    if not remind_at:
         await query.edit_message_text("Неизвестное время.")
         return
 
-    # _self = remind sender, otherwise look up family
-    if target_username == "_self":
-        target_chat_id = query.from_user.id
-        display_target = "тебе"
-    else:
-        target_chat_id = get_family_chat_id(target_username)
-        display_target = f"@{target_username}"
+    # Save time + target for step 2
+    pending["remind_at"] = remind_at.isoformat()
+    pending["target"] = target_username
 
-    if not target_chat_id:
-        await query.edit_message_text(f"@{target_username} не зарегистрирован.")
-        return
-
-    from_user = query.from_user.username or query.from_user.first_name
-
-    if add_reminder(target_chat_id, remind_at, remind_text, from_user):
-        time_str = remind_at.strftime("%d.%m в %H:%M")
-        await query.edit_message_text(
-            query.message.text.split("\n\n— Когда")[0] +
-            f"\n\n— Напомню {display_target} {time_str}: {remind_text}"
-        )
-        context.user_data.pop("pending_remind", None)
-        logger.info(f"LLM-routed reminder set for {display_target} at {time_str}: {remind_text}")
-    else:
-        await query.edit_message_text("Не удалось сохранить напоминание.")
+    time_str = remind_at.strftime("%H:%M")
+    keyboard = [
+        [
+            InlineKeyboardButton("Один раз", callback_data="remrec_once"),
+            InlineKeyboardButton("Каждый день", callback_data="remrec_daily"),
+        ],
+        [
+            InlineKeyboardButton("По будням", callback_data="remrec_weekdays"),
+            InlineKeyboardButton("Раз в неделю", callback_data="remrec_weekly"),
+        ],
+        [InlineKeyboardButton("Отмена", callback_data="remtime_cancel")],
+    ]
+    base_text = query.message.text.split("\n\n—")[0]
+    await query.edit_message_text(
+        base_text + f"\n\n— Время: {time_str}. Повторять?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -528,7 +571,8 @@ async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_T
     for r in sorted(user_reminders, key=lambda x: x["remind_at"]):
         remind_at = datetime.fromisoformat(r["remind_at"])
         time_str = remind_at.strftime("%d.%m %H:%M")
-        lines.append(f"• {time_str} — {r['text']}")
+        rec = {"daily": " 🔁ежедн", "weekdays": " 🔁будни", "weekly": " 🔁нед"}.get(r.get("recurring"), "")
+        lines.append(f"• {time_str} — {r['text']}{rec}")
 
     await update.message.reply_text("\n".join(lines))
 
@@ -546,10 +590,13 @@ async def check_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
             text = r["text"]
             from_user = r.get("from_user")
 
+            recurring = r.get("recurring")
+            rec_icon = " 🔁" if recurring else ""
+
             if from_user:
-                msg = f"⏰ Напоминание от @{from_user}:\n{text}"
+                msg = f"⏰ Напоминание от @{from_user}{rec_icon}:\n{text}"
             else:
-                msg = f"⏰ Напоминание:\n{text}"
+                msg = f"⏰ Напоминание{rec_icon}:\n{text}"
 
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -1524,6 +1571,23 @@ async def monday_review(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.info(f"Sent Monday review to {chat_id}")
     except Exception as e:
         logger.error(f"Monday review failed: {e}")
+
+
+async def mq_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /mq — Monotropism Questionnaire (Garau et al., 2023)."""
+    disclaimer = (
+        "📋 Monotropism Questionnaire (MQ)\n"
+        "Garau et al., 2023 | 47 вопросов\n\n"
+        "Это не диагностический инструмент. "
+        "MQ измеряет монотропность — стиль распределения внимания, "
+        "характерный для аутичных людей.\n\n"
+        "Отвечай, как чувствуешь обычно, не как \"правильно\".\n"
+        "Займёт ~10 минут."
+    )
+    await update.message.reply_text(
+        disclaimer,
+        reply_markup=get_mq_start_keyboard()
+    )
 
 
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

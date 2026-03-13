@@ -908,7 +908,7 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         else:
             await query.edit_message_text("Не удалось отметить. Задача могла измениться.")
 
-    elif data.startswith("remtime_"):
+    elif data.startswith("remtime_") or data.startswith("remrec_"):
         await handle_remind_callback(update, context)
 
     elif data == "cancel_steps":

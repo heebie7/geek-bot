@@ -140,6 +140,12 @@ FAMILY_ALIASES = {
     "тимофею": "karix_2",
     "тимке": "karix_2",
     "т": "karix_2",
+    "катя": "katealasheeva",
+    "кате": "katealasheeva",
+    "катюше": "katealasheeva",
+    "катерина": "katealasheeva",
+    "катерине": "katealasheeva",
+    "к": "katealasheeva",
 }
 
 # ── Reminder messages ─────────────────────────────────────────────────

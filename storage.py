@@ -307,8 +307,8 @@ def save_reminders(reminders: list) -> bool:
     return update_github_file(REMINDERS_FILE, content, "Update reminders")
 
 
-def add_reminder(chat_id: int, remind_at: datetime, text: str, from_user: str = None) -> bool:
-    """Добавить напоминание."""
+def add_reminder(chat_id: int, remind_at: datetime, text: str, from_user: str = None, recurring: str = None) -> bool:
+    """Добавить напоминание. recurring: 'daily', 'weekdays', 'weekly' или None."""
     reminders = get_reminders()
     reminder = {
         "chat_id": chat_id,
@@ -318,12 +318,28 @@ def add_reminder(chat_id: int, remind_at: datetime, text: str, from_user: str = 
     }
     if from_user:
         reminder["from_user"] = from_user
+    if recurring:
+        reminder["recurring"] = recurring
     reminders.append(reminder)
     return save_reminders(reminders)
 
 
+def _next_recurring(remind_at: datetime, recurring: str) -> datetime:
+    """Calculate next occurrence for a recurring reminder."""
+    if recurring == "daily":
+        return remind_at + timedelta(days=1)
+    elif recurring == "weekdays":
+        next_dt = remind_at + timedelta(days=1)
+        while next_dt.weekday() >= 5:  # Skip Sat/Sun
+            next_dt += timedelta(days=1)
+        return next_dt
+    elif recurring == "weekly":
+        return remind_at + timedelta(weeks=1)
+    return remind_at + timedelta(days=1)
+
+
 def get_due_reminders() -> list:
-    """Получить напоминания, которые пора отправить."""
+    """Получить напоминания, которые пора отправить. Recurring пересоздаются."""
     reminders = get_reminders()
     now = datetime.now(TZ)
     due = []
@@ -333,6 +349,12 @@ def get_due_reminders() -> list:
         remind_at = datetime.fromisoformat(r["remind_at"])
         if remind_at <= now:
             due.append(r)
+            # Reschedule recurring reminders
+            recurring = r.get("recurring")
+            if recurring:
+                next_r = dict(r)
+                next_r["remind_at"] = _next_recurring(remind_at, recurring).isoformat()
+                remaining.append(next_r)
         else:
             remaining.append(r)
 
