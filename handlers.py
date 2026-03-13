@@ -48,7 +48,6 @@ from keyboards import (
     get_joy_keyboard, get_joy_items_keyboard,
     get_task_confirm_keyboard, get_destination_keyboard,
     get_priority_keyboard,
-    get_mq_start_keyboard,
 )
 from finance import handle_csv_upload, income_command, process_command  # noqa: F401 — re-exported for bot.py
 from whoop import whoop_client
@@ -1576,22 +1575,6 @@ async def monday_review(context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.error(f"Monday review failed: {e}")
 
-
-async def mq_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /mq — Monotropism Questionnaire (Garau et al., 2023)."""
-    disclaimer = (
-        "📋 Monotropism Questionnaire (MQ)\n"
-        "Garau et al., 2023 | 47 вопросов\n\n"
-        "Это не диагностический инструмент. "
-        "MQ измеряет монотропность — стиль распределения внимания, "
-        "характерный для аутичных людей.\n\n"
-        "Отвечай, как чувствуешь обычно, не как \"правильно\".\n"
-        "Займёт ~10 минут."
-    )
-    await update.message.reply_text(
-        disclaimer,
-        reply_markup=get_mq_start_keyboard()
-    )
 
 
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
