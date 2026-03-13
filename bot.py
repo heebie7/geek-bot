@@ -673,7 +673,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode="Markdown"
         )
 
-    # ── Morning WHOOP feeling ──
+    # ── Morning WHOOP feeling → send analysis + motivation as new message ──
     elif data.startswith("morning_"):
         feeling = data.replace("morning_", "")
 
@@ -681,15 +681,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # Re-fetch if data lost (bot restarted between morning message and button click)
         if not morning_data:
-            # 1. Try file cache (survives bot restarts)
             morning_data = load_morning_cache(query.message.chat.id)
             if morning_data:
-                logger.info("Loaded morning WHOOP data from file cache (bot_data was empty after restart)")
+                logger.info("Loaded morning WHOOP data from file cache")
             else:
-                # 2. Last resort: live API re-fetch
                 try:
                     morning_data = get_morning_whoop_data()
-                    logger.info("Re-fetched morning WHOOP data from API (cache empty)")
+                    logger.info("Re-fetched morning WHOOP data from API")
                 except Exception as e:
                     logger.error(f"Failed to re-fetch morning data: {e}")
                     morning_data = {}
@@ -700,6 +698,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         trend = morning_data.get("trend", "stable")
         prev_avg = morning_data.get("prev_avg")
         workouts_yesterday = morning_data.get("workouts_yesterday", [])
+        data_str = morning_data.get("data_str", "")
 
         feeling_bad = feeling in ["tired", "bad"]
         trend_down = trend == "down"
@@ -714,16 +713,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         motivations = get_motivations_for_mode(mode, sleep_hours, strain, recovery)
 
         color = "green" if recovery >= 67 else ("yellow" if recovery >= 34 else "red")
-        wo_text = ", ".join(workouts_yesterday) if workouts_yesterday else "нет"
-        fmt = whoop_client.format_hours_min
-        data_summary = f"""Recovery: {recovery}% ({color})
-Сон: {fmt(sleep_hours)}
-Strain вчера: {strain}
-Тренировки вчера: {wo_text}
-Тренд: {trend} ({prev_avg}% → {recovery}%)"""
 
+        boxing_note = ""
         if workouts_yesterday and any("box" in w.lower() for w in workouts_yesterday):
-            data_summary += "\nВчера был бокс — ожидаемое снижение recovery на 2-3 дня"
+            boxing_note = "\nВчера был бокс — ожидаемое снижение recovery на 2-3 дня."
 
         feeling_text = {
             "great": "отлично",
@@ -733,28 +726,34 @@ Strain вчера: {strain}
         }.get(feeling, feeling)
 
         prompt = f"""Данные WHOOP:
-{data_summary}
+{data_str}{boxing_note}
 
 Human ответила "как себя чувствуешь?": "{feeling_text}".
 
-Ты — Geek (ART из Murderbot Diaries). Дай мотивацию на день.
+Ты — Geek (ART из Murderbot Diaries). Дай анализ данных и мотивацию на день в одном сообщении.
 
 Если подходят, используй 1-2 из этих фраз (подставь реальные числа):
 {motivations}
 
 Что учесть:
-- Цвет зоны recovery: {color}. Зоны: green (67-100%), yellow (34-66%), red (0-33%)
-- Не пересказывай данные целиком — выдели главное
-- Сон — если мало, обрати внимание на влияние на работу с клиентами
-- Режим "{mode}" — {"рекомендуй отдых, лёгкую активность, никаких серьёзных нагрузок" if mode == "recovery" else "можно тренироваться, но без фанатизма" if mode == "moderate" else "обычная мотивация"}
-- Если human сказала "{feeling_text}" и данные расходятся — обрати внимание коротко
-- Без эмодзи. На русском. 4-6 предложений."""
+- Recovery зона: {color} (green 67-100%, yellow 34-66%, red 0-33%)
+- Не пересказывай данные — выдели главное и что с этим делать
+- Если deep sleep < 60min или awake > 40min — что это значит для дня
+- Тренироваться или нет — конкретный вывод
+- Sleep debt — если есть, влияние на работу с клиентами
+- Режим "{mode}" — {"отдых, лёгкая активность" if mode == "recovery" else "можно тренироваться, без фанатизма" if mode == "moderate" else "обычная мотивация"}
+- Если "{feeling_text}" расходится с данными — обрати внимание коротко
+- Если данные хорошие — скажи прямо, не ищи проблемы
+- Без эмодзи. На русском. 5-8 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
-        await query.edit_message_text(text)
-        logger.info(f"Sent WHOOP morning motivation ({mode}) to {query.message.chat.id}")
+        # Remove buttons from original message, keep data
+        await query.edit_message_reply_markup(reply_markup=None)
+        # Send analysis + motivation as new message
+        await context.bot.send_message(chat_id=query.message.chat.id, text=text)
+        logger.info(f"Sent WHOOP morning analysis+motivation ({mode}, feeling={feeling}) to {query.message.chat.id}")
 
     # ── Project decomposition ──
     elif data.startswith("proj_"):
