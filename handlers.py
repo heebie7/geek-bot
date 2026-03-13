@@ -16,7 +16,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from config import (
-    TZ, logger, OWNER_CHAT_ID,
+    TZ, logger, OWNER_CHAT_ID, ALLOWED_USER_IDS,
     USER_CONTEXT_FILE, TASKS_FILE,
     ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI,
@@ -60,9 +60,6 @@ from meal_data import generate_weekly_menu
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /start."""
-    context.user_data.setdefault("mode", "geek")
-    mode = context.user_data["mode"]
-
     # Автоматическая регистрация для напоминаний
     user = update.effective_user
     if user and user.username:
@@ -70,6 +67,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         register_family_member(user.username, chat_id)
         logger.info(f"Registered family member: @{user.username} -> {chat_id}")
 
+    # Family members (not in ALLOWED_USER_IDS) — register only, no full access
+    if ALLOWED_USER_IDS and user and user.id not in ALLOWED_USER_IDS:
+        await update.message.reply_text("Зарегистрирован. Теперь могу отправлять тебе напоминания.")
+        return
+
+    context.user_data.setdefault("mode", "geek")
+    mode = context.user_data["mode"]
     await update.message.reply_text(
         f"Online. Режим: {mode.upper()}",
         reply_markup=get_reply_keyboard()

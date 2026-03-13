@@ -76,12 +76,15 @@ from whoop import whoop_client
 # ── Access control middleware ────────────────────────────────────────
 
 async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Middleware: блокировать неразрешённых пользователей."""
+    """Middleware: блокировать неразрешённых пользователей. /start разрешён всем для регистрации."""
     if not ALLOWED_USER_IDS:
         return
     if not update.effective_user:
         return
     if update.effective_user.id not in ALLOWED_USER_IDS:
+        # Allow /start for family registration
+        if update.message and update.message.text and update.message.text.strip().startswith("/start"):
+            return
         logger.warning(f"Unauthorized access attempt from user_id={update.effective_user.id}")
         raise ApplicationHandlerStop()
 
