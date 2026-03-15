@@ -114,6 +114,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data == "noop":
         return
 
+    # ── Reading channel: "✓ Прочитано" button ──
+    elif data.startswith("read:"):
+        label = data[5:]
+        await query.answer("Отмечено как прочитанное ✓")
+        # Replace button with "✓ Прочитано" (no more clickable)
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✓ Прочитано ✓", callback_data="noop")
+                ]])
+            )
+        except Exception:
+            pass  # Message might be too old to edit
+        return
+
     # ── Mode switching ──
     elif data == "mode_geek":
         context.user_data["mode"] = "geek"
