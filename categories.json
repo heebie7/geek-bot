@@ -25,7 +25,8 @@
       "Проценты": "interest_income",
       "Ольга А": "other_income",
       "Чужие деньги": "transfer",
-      "Ксения Зернина": "other_income"
+      "Ксения Зернина": "transfer",
+      "Роман Х.": "work_income"
     },
     "expense": {
       "Продукты": "groceries",
@@ -69,6 +70,9 @@
     "payee_expense_override": {
       "Александра М.": "self_care",
       "Александра М": "self_care"
+    },
+    "payee_income_override": {
+      "Роман Х.": "work_income"
     }
   },
   "wolt": {
@@ -186,6 +190,7 @@
       "HSTORES": "groceries",
       "RETAIL GROUP": "groceries",
       "ONEPRICE RETAIL": "groceries",
+      "MAGNITI": "groceries",
       "MINISO": "shopping",
       "_comment_eating_out": "Кафе и рестораны",
       "Glovo": "eating_out",
@@ -430,12 +435,12 @@
       "Комиссия: Плата за Программу страховой защиты": "insurance",
       "PAYS*MILTSOVA": "work_income",
       "PAYS*SZUMCZENIA": "work_income",
-      "KSENIIA ZERNINA": "other_income",
+      "KSENIIA ZERNINA": "transfer",
       "OLGA ALASHEEVA": "other_income",
       "Программу страховой защиты": "insurance",
       "страховой защиты": "insurance",
-      "GPI": "insurance",
-      "ZERNINA": "other_income",
+      "GPI": "health",
+      "ZERNINA": "transfer",
       "ALASHEEVA": "other_income",
       "Amount transfer/withdrawal": "transfer",
       "Ozon Premium": "subscriptions",
