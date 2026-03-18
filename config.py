@@ -70,6 +70,11 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "heebie7/geek-bot")
 WRITING_REPO = os.getenv("WRITING_REPO", "heebie7/Writing-space")  # Для задач и заметок
 
+# ── Writing workspace paths (for WHOOP analytics and Indra sessions) ──
+WHOOP_PATTERNS_PATH = "life/health/whoop/analytics/patterns.md"
+WHOOP_BASELINES_PATH = "life/health/whoop/analytics/baselines.md"
+INDRA_SESSIONS_DIR = "life/health/indra"
+
 # ── Owner ──────────────────────────────────────────────────────────────
 
 OWNER_CHAT_ID = 5999980147

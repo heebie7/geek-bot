@@ -22,6 +22,7 @@ from config import (
     CALENDAR_ID, SCOPES,
     TZ, logger,
     MORNING_CACHE_FILE,
+    WHOOP_PATTERNS_PATH, WHOOP_BASELINES_PATH, INDRA_SESSIONS_DIR,
 )
 
 
@@ -443,6 +444,102 @@ def parse_remind_time(text: str) -> tuple:
             pass
 
     return (None, None)
+
+
+# === INDRA & WHOOP ANALYTICS ===
+
+def _strip_frontmatter(text: str) -> str:
+    """Strip YAML frontmatter from markdown text."""
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            return parts[2].strip()
+    return text
+
+
+def load_whoop_patterns() -> str:
+    """Load confirmed WHOOP patterns from Writing repo."""
+    text = get_writing_file(WHOOP_PATTERNS_PATH)
+    if not text:
+        return "Паттерны не загружены."
+    return _strip_frontmatter(text)
+
+
+def load_whoop_baselines() -> str:
+    """Load personal WHOOP baselines from Writing repo."""
+    text = get_writing_file(WHOOP_BASELINES_PATH)
+    if not text:
+        return "Baselines не загружены."
+    return _strip_frontmatter(text)
+
+
+def load_latest_indra_session(max_age_days: int = 7) -> str:
+    """Load the most recent Indra session file if within max_age_days."""
+    files = list_writing_dir(INDRA_SESSIONS_DIR)
+    if not files:
+        return "Нет записей Indra-сессий."
+
+    # Filter to date-prefixed .md files, sort descending
+    dated = sorted(
+        [f for f in files.keys() if re.match(r'\d{4}-\d{2}-\d{2}', f)],
+        reverse=True,
+    )
+    if not dated:
+        return "Нет записей Indra-сессий."
+
+    # Check if most recent is within max_age_days
+    latest_name = dated[0]
+    date_str = latest_name[:10]
+    try:
+        file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        today = datetime.now(TZ).date()
+        if (today - file_date).days > max_age_days:
+            return "Последняя Indra-сессия старше 7 дней."
+    except ValueError:
+        pass
+
+    content = get_writing_file(files[latest_name])
+    if not content:
+        return "Не удалось загрузить последнюю Indra-сессию."
+
+    # Truncate if too long
+    if len(content) > 2000:
+        content = content[:2000] + "\n...(обрезано)"
+
+    return content
+
+
+def load_indra_sessions_week() -> str:
+    """Load all Indra session files from the last 7 days."""
+    files = list_writing_dir(INDRA_SESSIONS_DIR)
+    if not files:
+        return "Нет записей Indra-сессий за неделю."
+
+    today = datetime.now(TZ).date()
+    week_ago = today - timedelta(days=7)
+
+    sessions = []
+    for name in sorted(files.keys()):
+        if not re.match(r'\d{4}-\d{2}-\d{2}', name):
+            continue
+        date_str = name[:10]
+        try:
+            file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if file_date < week_ago:
+            continue
+
+        content = get_writing_file(files[name])
+        if content:
+            if len(content) > 1500:
+                content = content[:1500] + "\n...(обрезано)"
+            sessions.append(f"### {name}\n{content}")
+
+    if not sessions:
+        return "Нет записей Indra-сессий за последние 7 дней."
+
+    return "\n\n".join(sessions)
 
 
 # === GOOGLE CALENDAR ===
