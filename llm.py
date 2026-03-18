@@ -2,8 +2,8 @@ import random
 from datetime import datetime
 from google import genai
 from config import (
-    gemini_client, openai_client,
-    GEMINI_MODEL, GEMINI_PRO_MODEL, OPENAI_MODEL,
+    anthropic_client, gemini_client, openai_client,
+    ANTHROPIC_MODEL, GEMINI_MODEL, GEMINI_PRO_MODEL, OPENAI_MODEL,
     TZ, logger, USER_CONTEXT_FILE, LEYA_CONTEXT_FILE,
 )
 from prompts import GEEK_PROMPT, LEYA_PROMPT
@@ -296,13 +296,10 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
     if history is None:
         history = []
 
-    # Select Gemini model: Pro for health/WHOOP, Flash for everything else
-    model = GEMINI_PRO_MODEL if use_pro else GEMINI_MODEL
-
-    # Try Gemini
-    if gemini_client:
+    # ── Primary: Anthropic Sonnet (unless use_pro → Gemini Pro) ──
+    if use_pro and gemini_client:
+        # Health/WHOOP topics → Gemini Pro (специализированная модель)
         try:
-            # Gemini: передаём историю как список сообщений
             gemini_contents = []
             for msg in history:
                 gemini_contents.append(genai.types.Content(
@@ -315,7 +312,7 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
             ))
 
             response = gemini_client.models.generate_content(
-                model=model,
+                model=GEMINI_PRO_MODEL,
                 contents=gemini_contents,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=system,
@@ -324,13 +321,12 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
             )
             if response.text:
                 finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
-                logger.info(f"Gemini response OK ({model}), finish_reason={finish}, len={len(response.text)}")
+                logger.info(f"Gemini Pro response OK, finish_reason={finish}, len={len(response.text)}")
 
-                # Auto-continue if response was truncated
                 if _is_truncated(response):
-                    logger.warning(f"Gemini response truncated (finish_reason={finish}), auto-continuing...")
+                    logger.warning(f"Gemini Pro truncated, auto-continuing...")
                     full_text = _continue_generation(
-                        gemini_client, model, system, gemini_contents,
+                        gemini_client, GEMINI_PRO_MODEL, system, gemini_contents,
                         response.text, max_tokens,
                     )
                     return full_text
@@ -338,14 +334,76 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                 return response.text
             else:
                 finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
-                logger.warning(f"Gemini {model} returned empty response, finish_reason={finish}, falling back to OpenAI")
+                logger.warning(f"Gemini Pro empty response, finish_reason={finish}, falling back to Anthropic")
         except Exception as e:
-            logger.warning(f"Gemini API error, falling back to OpenAI: {e}")
+            logger.warning(f"Gemini Pro API error, falling back to Anthropic: {e}")
 
-    # Fallback to OpenAI
+    # ── Primary (non-pro): Anthropic Sonnet ──
+    if anthropic_client:
+        try:
+            messages = []
+            for msg in history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": "user", "content": user_message})
+
+            response = anthropic_client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            )
+            text = response.content[0].text if response.content else ""
+            if text:
+                logger.info(f"Anthropic response OK ({ANTHROPIC_MODEL}), stop_reason={response.stop_reason}, len={len(text)}")
+                return text
+            else:
+                logger.warning(f"Anthropic returned empty response, falling back to Gemini")
+        except Exception as e:
+            logger.warning(f"Anthropic API error, falling back to Gemini: {e}")
+
+    # ── Fallback 1: Gemini Flash ──
+    if gemini_client:
+        try:
+            gemini_contents = []
+            for msg in history:
+                gemini_contents.append(genai.types.Content(
+                    role="user" if msg["role"] == "user" else "model",
+                    parts=[genai.types.Part(text=msg["content"])]
+                ))
+            gemini_contents.append(genai.types.Content(
+                role="user",
+                parts=[genai.types.Part(text=user_message)]
+            ))
+
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=gemini_contents,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            if response.text:
+                finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
+                logger.info(f"Gemini Flash fallback OK, finish_reason={finish}, len={len(response.text)}")
+
+                if _is_truncated(response):
+                    logger.warning(f"Gemini Flash truncated, auto-continuing...")
+                    full_text = _continue_generation(
+                        gemini_client, GEMINI_MODEL, system, gemini_contents,
+                        response.text, max_tokens,
+                    )
+                    return full_text
+
+                return response.text
+            else:
+                logger.warning(f"Gemini Flash empty, falling back to OpenAI")
+        except Exception as e:
+            logger.warning(f"Gemini Flash API error, falling back to OpenAI: {e}")
+
+    # ── Fallback 2: OpenAI ──
     if openai_client:
         try:
-            # OpenAI: system + история + текущее сообщение
             messages = [{"role": "system", "content": system}]
             for msg in history:
                 messages.append({"role": msg["role"], "content": msg["content"]})
