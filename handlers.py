@@ -1776,6 +1776,70 @@ async def stop_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 
+# ── Channel quote handler ─────────────────────────────────────────────────────
+
+
+async def handle_channel_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Сохранить текстовое сообщение из канала чтения как цитату.
+
+    Игнорирует сообщения от бота (pipeline файлы).
+    Сохраняет текст от human как цитату в writing/research/quotes/.
+    """
+    from config import READING_CHANNEL_ID, OWNER_CHAT_ID
+    from tasks import save_quote
+
+    msg = update.channel_post
+    if not msg:
+        return
+
+    # Только из канала чтения
+    if msg.chat_id != READING_CHANNEL_ID:
+        return
+
+    # Игнорируем не-текстовые (файлы от pipeline)
+    if not msg.text:
+        return
+
+    # Игнорируем сообщения от бота (по sender_chat — канал сам себе автор)
+    # Текст от human приходит с author_signature или без sender_chat
+    # Pipeline файлы приходят через bot API — у них нет author_signature
+    if not msg.author_signature and msg.sender_chat:
+        # Сообщение от канала (бот постит от имени канала) — пропускаем
+        logger.info("Channel quote: skipping bot/channel message (no author_signature)")
+        return
+
+    quote_text = msg.text.strip()
+    if not quote_text:
+        return
+
+    # Определяем источник: если это reply на другое сообщение, берём название оттуда
+    source_name = "reading-channel"
+    if msg.reply_to_message:
+        # Reply на файл или сообщение — пробуем взять caption или текст
+        reply = msg.reply_to_message
+        if reply.document and reply.document.file_name:
+            # Имя файла как источник (убираем расширение)
+            fname = reply.document.file_name
+            source_name = fname.rsplit('.', 1)[0] if '.' in fname else fname
+        elif reply.text:
+            # Первая строка текста как источник
+            first_line = reply.text.split('\n')[0][:80]
+            source_name = first_line
+
+    logger.info(f"Channel quote: saving quote from '{source_name}', len={len(quote_text)}")
+    result = save_quote(quote_text, source_name)
+
+    if result:
+        # Реакция на сообщение — подтверждение
+        try:
+            from telegram import ReactionTypeEmoji
+            await msg.set_reaction([ReactionTypeEmoji(emoji="\U0001f4be")])  # 💾
+        except Exception:
+            pass  # Реакции могут не работать в каналах
+    else:
+        logger.error("Channel quote: failed to save")
+
+
 # ── Photo and message handlers ───────────────────────────────────────────────
 
 

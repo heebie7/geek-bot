@@ -170,6 +170,45 @@ def create_rawnote(title: str, content: str) -> bool:
     return result
 
 
+def save_quote(quote_text: str, source_name: str = "unknown") -> bool:
+    """Сохранить цитату в writing/research/quotes/.
+
+    Один файл на источник — дописывает цитаты в конец.
+    """
+    logger.info(f"save_quote: source='{source_name}', len={len(quote_text)}")
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    # Slug из названия источника
+    slug = re.sub(r'[^\w\s-]', '', source_name.lower())
+    slug = re.sub(r'[\s]+', '-', slug)[:60].strip('-')
+    if not slug:
+        slug = "misc"
+    filename = f"writing/research/quotes/{slug}.md"
+
+    # Проверяем, существует ли файл — если да, дописываем
+    existing = get_writing_file(filename)
+
+    if existing:
+        # Дописываем цитату в конец
+        new_content = existing.rstrip() + f"\n\n> {quote_text}\n— добавлено {today}"
+        message = f"Add quote to {slug}"
+    else:
+        # Создаём новый файл
+        new_content = (
+            f"---\n"
+            f"source: \"{source_name}\"\n"
+            f"date: {today}\n"
+            f"tags: []\n"
+            f"---\n\n"
+            f"> {quote_text}\n— добавлено {today}"
+        )
+        message = f"Create quotes: {slug}"
+
+    result = save_writing_file(filename, new_content, message)
+    logger.info(f"save_quote: result={result}")
+    return result
+
+
 def parse_save_tag(response: str) -> tuple:
     """Извлечь тег SAVE из ответа.
     Возвращает (clean_response, save_type, zone_or_title, content) или (response, None, None, None)

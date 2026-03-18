@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from google import genai
 from openai import OpenAI
+import anthropic
 
 # ── Environment variables ──────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Список разрешённых user_id (пустой = доступ для всех)
 _allowed_ids_raw = os.getenv("ALLOWED_USER_IDS", "")
@@ -74,6 +76,10 @@ WRITING_REPO = os.getenv("WRITING_REPO", "heebie7/Writing-space")  # Для за
 WHOOP_PATTERNS_PATH = "life/health/whoop/analytics/patterns.md"
 WHOOP_BASELINES_PATH = "life/health/whoop/analytics/baselines.md"
 INDRA_SESSIONS_DIR = "life/health/indra"
+
+# ── Reading channel (for quote saving) ────────────────────────────────
+
+READING_CHANNEL_ID = int(os.getenv("READING_CHANNEL_ID", "-1003819019136"))
 
 # ── Owner ──────────────────────────────────────────────────────────────
 
