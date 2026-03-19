@@ -762,8 +762,14 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
 - Если данные хорошие — скажи прямо, не ищи проблемы
 - Без эмодзи. На русском. 5-8 предложений."""
 
-        text = await get_llm_response(prompt, mode="geek", max_tokens=800, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+        text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
         text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
+
+        # Retry once if response suspiciously short (Gemini Pro sometimes returns fragments)
+        if len(text) < 200:
+            logger.warning(f"WHOOP morning response too short ({len(text)} chars), retrying...")
+            text = await get_llm_response(prompt, mode="geek", max_tokens=1200, skip_context=True, custom_system=WHOOP_HEALTH_SYSTEM, use_pro=True)
+            text = re.sub(r'\[SAVE:[^\]]+\]', '', text).strip()
 
         # Remove buttons from original message, keep data
         await query.edit_message_reply_markup(reply_markup=None)
