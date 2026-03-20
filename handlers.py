@@ -1359,10 +1359,12 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             indra_text = re.sub(r'\[SAVE:[^\]]+\]', '', indra_text).strip()
             if indra_text:
-                await context.bot.send_message(
+                sent = await context.bot.send_message(
                     chat_id=chat_id, text=indra_text,
                 )
-                logger.info(f"Sent Indra daily PNEI to {chat_id}")
+                # Store message_id for reply-based routing
+                context.bot_data[f"indra_msg_{chat_id}"] = sent.message_id
+                logger.info(f"Sent Indra daily PNEI to {chat_id}, msg_id={sent.message_id}")
         except Exception as e:
             logger.error(f"Indra daily PNEI failed: {e}")
 
@@ -1556,10 +1558,11 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             indra_text = re.sub(r'\[SAVE:[^\]]+\]', '', indra_text).strip()
             if indra_text:
-                await context.bot.send_message(
+                sent = await context.bot.send_message(
                     chat_id=chat_id, text=indra_text,
                 )
-                logger.info(f"Sent Indra weekly PNEI to {chat_id}")
+                context.bot_data[f"indra_msg_{chat_id}"] = sent.message_id
+                logger.info(f"Sent Indra weekly PNEI to {chat_id}, msg_id={sent.message_id}")
         except Exception as e:
             logger.error(f"Indra weekly PNEI failed: {e}")
 
@@ -1980,6 +1983,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 reply_markup=get_priority_keyboard("batchpri_")
             )
         return
+
+    # ── Reply-based routing: if replying to Indra's message → Indra responds ──
+    reply_msg = update.message.reply_to_message
+    if reply_msg:
+        chat_id = update.effective_chat.id
+        indra_msg_id = context.bot_data.get(f"indra_msg_{chat_id}")
+        if indra_msg_id and reply_msg.message_id == indra_msg_id:
+            try:
+                patterns = load_whoop_patterns()
+                baselines = load_whoop_baselines()
+                last_session = load_latest_indra_session()
+
+                indra_system = INDRA_WHOOP_DAILY_PROMPT.format(
+                    patterns_context=patterns,
+                    baselines_context=baselines,
+                    last_indra_session=last_session,
+                )
+
+                # Include Indra's original message as context
+                indra_original = reply_msg.text or ""
+                indra_reply_prompt = f"Ты написала:\n{indra_original}\n\nHuman ответила:\n{user_message}"
+
+                indra_response = await get_llm_response(
+                    indra_reply_prompt,
+                    mode="geek",
+                    max_tokens=500,
+                    skip_context=True,
+                    custom_system=indra_system,
+                    use_pro=True,
+                )
+                indra_response = re.sub(r'\[SAVE:[^\]]+\]', '', indra_response).strip()
+                if indra_response:
+                    sent = await update.message.reply_text(indra_response)
+                    context.bot_data[f"indra_msg_{chat_id}"] = sent.message_id
+                    logger.info(f"Indra reply-based response, msg_id={sent.message_id}")
+                return
+            except Exception as e:
+                logger.error(f"Indra reply routing failed: {e}")
+                # Fall through to normal handling
 
     # История диалога: последние 20 сообщений (10 пар user+assistant)
     history = context.user_data.get("history", [])
