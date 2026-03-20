@@ -23,7 +23,7 @@ from config import (
     REMINDERS, SLEEP_PROMPTS, FAMILY_ALIASES,
 )
 from prompts import (
-    SENSORY_LEYA_PROMPT, WHOOP_HEALTH_SYSTEM,
+    SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
     INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT, GEEK_MOTIVATION_PROMPT,
 )
 from storage import (
@@ -92,14 +92,6 @@ async def switch_to_geek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup=get_reply_keyboard()
     )
 
-
-async def switch_to_leya(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Переключиться на режим Лея."""
-    context.user_data["mode"] = "leya"
-    await update.message.reply_text(
-        "Привет. Это Лея.\n\nЯ здесь, чтобы помочь тебе не потерять важное среди срочного.",
-        reply_markup=get_reply_keyboard()
-    )
 
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -218,7 +210,7 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 Если recovery красный или сон плохой — рекомендуй меньше задач и восстановление.
 Будь краткой, но заботливой."""
 
-    response = await get_llm_response(prompt, mode="leya", max_tokens=1500, skip_context=True)
+    response = await get_llm_response(prompt, mode="geek", max_tokens=1500, skip_context=True)
 
     # Add Joy warning if needed
     if joy_context:

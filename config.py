@@ -67,7 +67,6 @@ GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
 
 BASE_DIR = os.path.dirname(__file__)
 USER_CONTEXT_FILE = os.path.join(BASE_DIR, "user_context.md")
-LEYA_CONTEXT_FILE = os.path.join(BASE_DIR, "leya_context.md")
 TASKS_FILE = os.path.join(BASE_DIR, "tasks.md")
 MORNING_CACHE_FILE = os.path.join(BASE_DIR, "morning_cache.json")
 

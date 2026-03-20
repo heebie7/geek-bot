@@ -2,7 +2,7 @@
 """
 Geek-bot: Telegram бот с двумя режимами:
 - Geek (ART из Murderbot) — напоминания, сарказм, забота через логику
-- Лея — коуч-навигатор, бережная поддержка, обзор задач
+- Dr. Indra — ПНЭИ-специалист, сенсорная регуляция, WHOOP-отчёты
 
 Тонкий оркестратор: импорты, check_access, button_callback (диспетчер),
 set_bot_commands, main.
@@ -29,7 +29,7 @@ from config import (
     TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
 )
-from prompts import SENSORY_LEYA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
+from prompts import SENSORY_INDRA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import load_file, get_week_events, is_muted, load_morning_cache
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -52,7 +52,7 @@ from keyboards import (
     get_sensory_bad_keyboard, BINGO_ITEMS,
 )
 from handlers import (
-    start, switch_to_geek, switch_to_leya,
+    start, switch_to_geek,
     dashboard_command, todo_command, week_command,
     tasks_command, addtask_command, done_command,
     status, profile,
@@ -138,13 +138,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=get_main_keyboard("geek")
         )
 
-    elif data == "mode_leya":
-        context.user_data["mode"] = "leya"
-        await query.edit_message_text(
-            "Привет. Это Лея.\n\nЧто сейчас важно?",
-            reply_markup=get_main_keyboard("leya")
-        )
-
     # ── Overview callbacks ──
     elif data == "todo":
         tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
@@ -168,7 +161,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 Будь краткой."""
 
-        response = await get_llm_response(prompt, mode="leya")
+        response = await get_llm_response(prompt, mode="geek")
         await query.message.reply_text(response)
 
     elif data == "week":
@@ -295,7 +288,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 {raw_text}"""
 
         result = await get_llm_response(
-            note_prompt, mode="leya", skip_context=True, max_tokens=4000,
+            note_prompt, mode="geek", skip_context=True, max_tokens=4000,
             custom_system="Ты помощник для создания заметок. Цитируй сообщения дословно. Не перефразируй и не добавляй ничего от себя."
         )
 
@@ -481,7 +474,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
         try:
-            system = SENSORY_LEYA_PROMPT.format(
+            system = SENSORY_INDRA_PROMPT.format(
                 sensory_menu=menu_text,
                 current_time=current_time
             )
@@ -977,7 +970,6 @@ def main() -> None:
     # Команды
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("geek", switch_to_geek))
-    application.add_handler(CommandHandler("leya", switch_to_leya))
     application.add_handler(CommandHandler("dashboard", dashboard_command))
     application.add_handler(CommandHandler("todo", todo_command))
     application.add_handler(CommandHandler("week", week_command))

@@ -4,9 +4,9 @@ from google import genai
 from config import (
     gemini_client, openai_client,
     GEMINI_MODEL, GEMINI_PRO_MODEL, OPENAI_MODEL,
-    TZ, logger, USER_CONTEXT_FILE, LEYA_CONTEXT_FILE,
+    TZ, logger, USER_CONTEXT_FILE,
 )
-from prompts import GEEK_PROMPT, LEYA_PROMPT
+from prompts import GEEK_PROMPT
 from storage import load_file, get_writing_file
 from tasks import get_life_tasks
 from whoop import whoop_client
@@ -285,12 +285,8 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
             tasks = get_life_tasks()
             whoop_data = _get_whoop_context()
 
-        if mode == "leya":
-            user_context = load_file(LEYA_CONTEXT_FILE, "Контекст не загружен.")
-            system = LEYA_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
-        else:
-            user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
-            system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
+        user_context = load_file(USER_CONTEXT_FILE, "Профиль не настроен.")
+        system = GEEK_PROMPT.format(user_context=user_context, current_time=current_time, tasks=tasks, whoop_data=whoop_data)
 
     # Собираем контекст диалога
     if history is None:

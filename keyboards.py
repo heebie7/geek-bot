@@ -92,10 +92,6 @@ def get_main_keyboard(mode: str = "geek"):
     """Главная клавиатура."""
     keyboard = [
         [
-            InlineKeyboardButton("Geek" if mode != "geek" else "* Geek *", callback_data="mode_geek"),
-            InlineKeyboardButton("Лея" if mode != "leya" else "* Лея *", callback_data="mode_leya"),
-        ],
-        [
             InlineKeyboardButton("Todo", callback_data="todo"),
             InlineKeyboardButton("Неделя", callback_data="week"),
             InlineKeyboardButton("Шаги", callback_data="next_steps"),
