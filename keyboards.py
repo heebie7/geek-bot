@@ -108,7 +108,7 @@ def get_main_keyboard(mode: str = "geek"):
 def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
-        [KeyboardButton("🔥 Dashboard"), KeyboardButton("📋 Todo"), KeyboardButton("🎯 Steps")],
+        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🧭 Captain"), KeyboardButton("🎯 Steps")],
         [KeyboardButton("📅 Week"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
         [KeyboardButton("➕ Add")],
     ]

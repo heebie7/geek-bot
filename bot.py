@@ -61,6 +61,7 @@ from handlers import (
     setup_reminders, stop_reminders,
     next_steps_command,
     whoop_command, setup_whoop_command, stop_whoop_command,
+    captain_command,
     myid_command,
     check_reminders,
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
@@ -939,6 +940,7 @@ async def set_bot_commands(application) -> None:
     """Установить меню команд бота."""
     commands = [
         ("start", "Показать кнопки"),
+        ("captain", "Кэп — обзор дел и планов"),
         ("whoop", "WHOOP — отчёт по сну и восстановлению"),
         ("status", "Текущий статус и время"),
         ("tasks", "Все задачи из файла"),
@@ -986,6 +988,7 @@ def main() -> None:
     application.add_handler(CommandHandler("stop_reminders", stop_reminders))
     application.add_handler(CommandHandler("remind", remind_command))
     application.add_handler(CommandHandler("myreminders", list_reminders_command))
+    application.add_handler(CommandHandler("captain", captain_command))
     application.add_handler(CommandHandler("whoop", whoop_command))
     application.add_handler(CommandHandler("whoop_on", setup_whoop_command))
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))

@@ -25,6 +25,7 @@ from config import (
 from prompts import (
     SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
     INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT, GEEK_MOTIVATION_PROMPT,
+    CAPTAIN_PROMPT, CAPTAIN_REPLY_PROMPT,
 )
 from storage import (
     load_file, get_writing_file, save_writing_file,
@@ -92,6 +93,43 @@ async def switch_to_geek(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup=get_reply_keyboard()
     )
 
+
+
+async def captain_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /captain — обзор дел и планов голосом Кэп."""
+    chat_id = update.effective_chat.id
+
+    # Собираем данные
+    tasks_content = get_life_tasks()
+    calendar = get_week_events()
+    whoop = _get_whoop_context()
+    current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+
+    # Сокращаем tasks — берём только открытые с приоритетами
+    priority_tasks = _get_priority_tasks()
+
+    captain_system = CAPTAIN_PROMPT.format(
+        tasks_context=priority_tasks,
+        calendar_context=calendar,
+        whoop_context=whoop,
+        current_time=current_time,
+    )
+
+    prompt = "Дай обзор и фокус на сегодня."
+
+    response = await get_llm_response(
+        prompt,
+        mode="geek",
+        max_tokens=1200,
+        skip_context=True,
+        custom_system=captain_system,
+        use_pro=True,
+    )
+
+    if response:
+        sent = await update.message.reply_text(response)
+        context.bot_data[f"captain_msg_{chat_id}"] = sent.message_id
+        logger.info(f"Captain message sent, msg_id={sent.message_id}")
 
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1862,8 +1900,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user_message == "🔥 Dashboard":
         await dashboard_command(update, context)
         return
-    elif user_message == "📋 Todo":
-        await todo_command(update, context)
+    elif user_message == "🧭 Captain":
+        await captain_command(update, context)
         return
     elif user_message == "📅 Week":
         await week_command(update, context)
@@ -2021,6 +2059,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 return
             except Exception as e:
                 logger.error(f"Indra reply routing failed: {e}")
+                # Fall through to normal handling
+
+        # ── Reply-based routing: Captain ──
+        captain_msg_id = context.bot_data.get(f"captain_msg_{chat_id}")
+        if captain_msg_id and reply_msg.message_id == captain_msg_id:
+            try:
+                priority_tasks = _get_priority_tasks()
+                current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+
+                captain_system = CAPTAIN_REPLY_PROMPT.format(
+                    tasks_context=priority_tasks,
+                    current_time=current_time,
+                )
+
+                captain_original = reply_msg.text or ""
+                captain_reply_prompt = f"Ты написала:\n{captain_original}\n\nHuman ответила:\n{user_message}"
+
+                captain_response = await get_llm_response(
+                    captain_reply_prompt,
+                    mode="geek",
+                    max_tokens=600,
+                    skip_context=True,
+                    custom_system=captain_system,
+                    use_pro=True,
+                )
+                captain_response = re.sub(r'\[SAVE:[^\]]+\]', '', captain_response).strip()
+                if captain_response:
+                    sent = await update.message.reply_text(captain_response)
+                    context.bot_data[f"captain_msg_{chat_id}"] = sent.message_id
+                    logger.info(f"Captain reply-based response, msg_id={sent.message_id}")
+                return
+            except Exception as e:
+                logger.error(f"Captain reply routing failed: {e}")
                 # Fall through to normal handling
 
     # История диалога: последние 20 сообщений (10 пар user+assistant)
