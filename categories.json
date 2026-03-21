@@ -69,7 +69,10 @@
     },
     "payee_expense_override": {
       "Александра М.": "self_care",
-      "Александра М": "self_care"
+      "Александра М": "self_care",
+      "Narrativnoe sodruzhest": "education",
+      "Нарративное содружество": "education",
+      "Currency exchange": "transfer"
     },
     "payee_income_override": {
       "Роман Х.": "work_income"
@@ -107,7 +110,7 @@
     ],
     "subscriptions": {
       "Spotify": "subscriptions",
-      "PERLEGO": "education",
+      "PERLEGO": "subscriptions",
       "Zoom": "work_expenses",
       "OVD-Info": "charity"
     },
@@ -290,13 +293,13 @@
       "GOOGLE *MANUS AI": "ai_tokens",
       "EDITOR COLLAB": "work_expenses",
       "_comment_education": "Образование",
-      "Audible": "education",
+      "Audible": "subscriptions",
       "GOOGLE *CLOZEMASTER": "education",
       "GOOGLE *DUOLINGO": "education",
       "GOOGLE *IFS GUIDE": "education",
       "LIFEARCHITECT.COM": "education",
       "MEMORIAPUBLISHING": "education",
-      "PERLEGO": "education",
+      "PERLEGO": "subscriptions",
       "_comment_entertainment": "Развлечения и игры",
       "GOOGLE *DIGITAL DETOX": "entertainment",
       "GOOGLE DIGITAL DETOX": "entertainment",
@@ -340,6 +343,8 @@
       "ENJOY SANTANDER": "travel",
       "BLS INTERNATIONAL": "travel",
       "_comment_health": "Здоровье и медицина",
+      "UNISON": "health",
+      "Unison": "health",
       "CURATIO": "health",
       "SYNEVO": "health",
       "G ZHVANIA UNIVERSITY CLIN": "health",
@@ -401,6 +406,8 @@
       "PAYS*MEDVEDEVA": "work_income",
       "ALEKSANDR SELIVANOV": "work_income",
       "NATALIA FOMINCEVA": "transfer",
+      "SHAYKHULOV": "work_income",
+      "PSND*SHAYKHULOV": "work_income",
       "_comment_transfers": "Переводы (не расходы)",
       "PAYSEND": "transfer",
       "KORONAPAY": "transfer",
