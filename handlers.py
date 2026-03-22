@@ -1900,8 +1900,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user_message == "🔥 Dashboard":
         await dashboard_command(update, context)
         return
-    elif user_message == "🧭 Captain":
-        await captain_command(update, context)
+    elif user_message == "🌉 Bridge":
+        await update.message.reply_text(
+            "Переключаю на мостик.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🌉 Мостик", url="https://t.me/Geek_bridge_bot")
+            ]])
+        )
         return
     elif user_message == "📅 Week":
         await week_command(update, context)
