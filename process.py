@@ -274,9 +274,10 @@ def parse_zen(filepath, categories, target_period):
                     else:
                         cat = cat_map_exp.get(category_name, "other_expense")
                         tx_type = "expense"
-                    # Переопределение по payee (приоритет над категорией)
-                    if payee in payee_exp_override:
-                        cat = payee_exp_override[payee]
+                    # Переопределение по payee или description (приоритет над категорией)
+                    override_key = payee if payee in payee_exp_override else (description if description in payee_exp_override else None)
+                    if override_key:
+                        cat = payee_exp_override[override_key]
                         if cat == "transfer":
                             tx_type = "transfer"
                 rows.append({
@@ -294,8 +295,9 @@ def parse_zen(filepath, categories, target_period):
                 # Доход
                 payee_inc_override = categories["zen"].get("payee_income_override", {})
                 cat = cat_map_inc.get(category_name, "other_income")
-                if payee in payee_inc_override:
-                    cat = payee_inc_override[payee]
+                inc_override_key = payee if payee in payee_inc_override else (description if description in payee_inc_override else None)
+                if inc_override_key:
+                    cat = payee_inc_override[inc_override_key]
                 rows.append({
                     "date": date_str,
                     "type": "income",
