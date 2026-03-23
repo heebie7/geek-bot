@@ -1908,11 +1908,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             ]])
         )
         return
-    elif user_message == "📅 Week":
-        await week_command(update, context)
-        return
-    elif user_message == "🎯 Steps":
-        await next_steps_command(update, context)
+    elif user_message == "📋 Todo":
+        await todo_command(update, context)
         return
     elif user_message in ("➕ Add", "📝 Note"):
         await update.message.reply_text(

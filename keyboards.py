@@ -108,9 +108,8 @@ def get_main_keyboard(mode: str = "geek"):
 def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
-        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🌉 Bridge"), KeyboardButton("🎯 Steps")],
-        [KeyboardButton("📅 Week"), KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy")],
-        [KeyboardButton("➕ Add")],
+        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🌉 Bridge"), KeyboardButton("📋 Todo")],
+        [KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy"), KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
