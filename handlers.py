@@ -1912,9 +1912,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await todo_command(update, context)
         return
     elif user_message in ("➕ Add", "📝 Note"):
+        context.user_data["note_mode"] = True
+        context.user_data["note_buffer"] = []
         await update.message.reply_text(
-            "Что добавить?",
-            reply_markup=get_add_keyboard()
+            "Режим заметки. Пересылай сообщения или пиши текст.\n"
+            "Когда закончишь — нажми Готово.",
+            reply_markup=get_note_mode_keyboard()
         )
         return
     elif user_message == "🧘 Sensory":
