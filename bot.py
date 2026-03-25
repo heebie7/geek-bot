@@ -964,6 +964,7 @@ async def set_bot_commands(application) -> None:
 # ── Reading reactions ────────────────────────────────────────────────
 
 import json as _json
+from storage import get_writing_file, save_writing_file
 
 async def handle_reading_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Track emoji reactions on messages in the reading topic as 'read' markers."""
@@ -982,18 +983,21 @@ async def handle_reading_reaction(update: Update, context: ContextTypes.DEFAULT_
         return
     msg_id = reaction.message_id
     user_id = reaction.user.id if reaction.user else None
-    # Load state
+    # Load state from Writing repo
     try:
-        with open(READING_STATE_FILE, 'r') as f:
-            state = _json.load(f)
-    except (FileNotFoundError, _json.JSONDecodeError):
+        raw = get_writing_file(READING_STATE_FILE)
+        state = _json.loads(raw) if raw else {"read_messages": []}
+    except (ValueError, _json.JSONDecodeError):
         state = {"read_messages": []}
     # Add if not already tracked
     if msg_id not in state["read_messages"]:
         state["read_messages"].append(msg_id)
         logger.info(f"Reading reaction: msg {msg_id} marked as read by user {user_id}")
-    with open(READING_STATE_FILE, 'w') as f:
-        _json.dump(state, f, indent=2)
+        save_writing_file(
+            READING_STATE_FILE,
+            _json.dumps(state, indent=2),
+            f"reading: mark msg {msg_id} as read",
+        )
 
 
 # ── Main ─────────────────────────────────────────────────────────────

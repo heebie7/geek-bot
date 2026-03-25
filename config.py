@@ -89,7 +89,7 @@ READING_CHANNEL_ID = int(os.getenv("READING_CHANNEL_ID", "-1003819019136"))
 
 READING_GROUP_ID = int(os.getenv("READING_GROUP_ID", "-1003821528541"))
 READING_TOPIC_ID = 6  # "Читалка" topic thread_id
-READING_STATE_FILE = "reading_reactions.json"
+READING_STATE_FILE = "life/reading-reactions.json"
 
 # ── Owner ──────────────────────────────────────────────────────────────
 
