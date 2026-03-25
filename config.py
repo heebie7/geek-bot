@@ -85,6 +85,12 @@ INDRA_SESSIONS_DIR = "life/health/indra"
 
 READING_CHANNEL_ID = int(os.getenv("READING_CHANNEL_ID", "-1003819019136"))
 
+# ── Reading group (reaction tracking) ────────────────────────────────
+
+READING_GROUP_ID = int(os.getenv("READING_GROUP_ID", "-1003821528541"))
+READING_TOPIC_ID = 6  # "Читалка" topic thread_id
+READING_STATE_FILE = "reading_reactions.json"
+
 # ── Owner ──────────────────────────────────────────────────────────────
 
 OWNER_CHAT_ID = 5999980147

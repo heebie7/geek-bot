@@ -18,6 +18,7 @@ from telegram.ext import (
     ApplicationHandlerStop,
     CommandHandler,
     MessageHandler,
+    MessageReactionHandler,
     CallbackQueryHandler,
     TypeHandler,
     ContextTypes,
@@ -28,6 +29,7 @@ from config import (
     TELEGRAM_TOKEN, ALLOWED_USER_IDS, TZ, logger, OWNER_CHAT_ID,
     TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
+    READING_GROUP_ID, READING_TOPIC_ID, READING_STATE_FILE,
 )
 from prompts import SENSORY_INDRA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import load_file, get_week_events, is_muted, load_morning_cache
@@ -959,6 +961,41 @@ async def set_bot_commands(application) -> None:
     await application.bot.set_my_commands(commands)
 
 
+# ── Reading reactions ────────────────────────────────────────────────
+
+import json as _json
+
+async def handle_reading_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Track emoji reactions on messages in the reading topic as 'read' markers."""
+    reaction = update.message_reaction
+    if not reaction:
+        return
+    chat_id = reaction.chat.id
+    thread_id = getattr(reaction, 'message_thread_id', None)
+    # Only track reactions in the reading group + reading topic
+    if chat_id != READING_GROUP_ID:
+        return
+    if thread_id is not None and thread_id != READING_TOPIC_ID:
+        return
+    # Any new reaction = mark as read
+    if not reaction.new_reaction:
+        return
+    msg_id = reaction.message_id
+    user_id = reaction.user.id if reaction.user else None
+    # Load state
+    try:
+        with open(READING_STATE_FILE, 'r') as f:
+            state = _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        state = {"read_messages": []}
+    # Add if not already tracked
+    if msg_id not in state["read_messages"]:
+        state["read_messages"].append(msg_id)
+        logger.info(f"Reading reaction: msg {msg_id} marked as read by user {user_id}")
+    with open(READING_STATE_FILE, 'w') as f:
+        _json.dump(state, f, indent=2)
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -1070,6 +1107,9 @@ def main() -> None:
         filters.UpdateType.CHANNEL_POST & filters.TEXT,
         handle_channel_quote
     ))
+
+    # Обработка реакций в топике чтения
+    application.add_handler(MessageReactionHandler(handle_reading_reaction))
 
     # Запуск
     logger.info("Bot starting...")
