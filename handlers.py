@@ -1809,6 +1809,47 @@ async def stop_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 
+# ── Quote command /q ──────────────────────────────────────────────────────────
+
+
+async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /q <цитата> — сохранить цитату с выбором источника из очереди чтения."""
+    from tasks import get_today_reading_sources, save_quote
+
+    if not context.args:
+        await update.message.reply_text("Использование: /q <текст цитаты>")
+        return
+
+    quote_text = ' '.join(context.args).strip()
+    if not quote_text:
+        await update.message.reply_text("Цитата пустая.")
+        return
+
+    sources = get_today_reading_sources()
+
+    if not sources:
+        result = save_quote(quote_text, "reading")
+        if result:
+            await update.message.reply_text("Сохранено в reading.md 💾")
+        else:
+            await update.message.reply_text("Не удалось сохранить.")
+        return
+
+    context.user_data["pending_quote"] = quote_text
+
+    keyboard = []
+    for display_name, slug in sources:
+        cb_data = f"quote_src:{slug}"[:64]
+        keyboard.append([InlineKeyboardButton(display_name, callback_data=cb_data)])
+    keyboard.append([InlineKeyboardButton("Другой источник", callback_data="quote_src:other")])
+
+    preview = quote_text[:80] + ('...' if len(quote_text) > 80 else '')
+    await update.message.reply_text(
+        f"«{preview}»\n\nКуда сохранить?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 # ── Channel quote handler ─────────────────────────────────────────────────────
 
 

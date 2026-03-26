@@ -170,6 +170,63 @@ def create_rawnote(title: str, content: str) -> bool:
     return result
 
 
+def get_today_reading_sources() -> list:
+    """Get today's reading sources from reading-queue.md.
+
+    Returns list of (display_name, slug) tuples for book/chapter/file entries.
+    Skips url entries and focus/status files.
+    """
+    content = get_writing_file("life/reading-queue.md")
+    if not content:
+        return []
+
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    lines = content.split('\n')
+
+    sources = []
+    in_today = False
+    pending_type = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith('## '):
+            date_str = stripped[3:].strip()
+            in_today = (date_str == today)
+            continue
+
+        if not in_today:
+            continue
+
+        if stripped.startswith('- chapter:') or stripped.startswith('- book:') or stripped.startswith('- file:'):
+            pending_type = 'book'
+        elif stripped.startswith('- url:'):
+            pending_type = 'skip'
+        elif stripped.startswith('context:') and pending_type == 'book':
+            ctx = stripped[8:].strip()
+            if ' — ' in ctx:
+                display_name = ctx.split(' — ')[0].strip()
+            elif ',' in ctx:
+                display_name = ctx.split(',')[0].strip()
+            else:
+                display_name = ctx[:40]
+
+            skip_keywords = ['капитанский', 'фокус', 'статус', 'focus', 'status', 'мостик']
+            if any(kw in display_name.lower() for kw in skip_keywords):
+                pending_type = None
+                continue
+
+            slug = re.sub(r'[^\w\s-]', '', display_name.lower())
+            slug = re.sub(r'[\s]+', '-', slug)[:30].strip('-')
+
+            if display_name and slug:
+                if not any(s[1] == slug for s in sources):
+                    sources.append((display_name, slug))
+            pending_type = None
+
+    return sources[:5]
+
+
 def save_quote(quote_text: str, source_name: str = "unknown") -> bool:
     """Сохранить цитату в writing/research/quotes/.
 

@@ -70,7 +70,7 @@ from handlers import (
     whoop_weekly_summary, monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_photo_note, handle_message, handle_remind_callback,
-    handle_channel_quote,
+    handle_channel_quote, quote_command,
     income_command, process_command, handle_csv_upload,
 )
 from meal_data import generate_weekly_menu
@@ -117,6 +117,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data == "noop":
         return
+
+    # ── Quote source selection ──
+    elif data.startswith("quote_src:"):
+        from tasks import get_today_reading_sources, save_quote
+        slug = data[10:]
+        quote_text = context.user_data.pop("pending_quote", None)
+        if not quote_text:
+            await query.edit_message_text("Цитата потеряна. Повтори /q.")
+            return
+
+        if slug == "other":
+            context.user_data["quote_awaiting_source"] = quote_text
+            await query.edit_message_text("Напиши название источника:")
+            return
+
+        sources = get_today_reading_sources()
+        display_name = next((name for name, s in sources if s == slug), slug)
+
+        result = save_quote(quote_text, display_name)
+        if result:
+            await query.edit_message_text(f"Сохранено → {slug}.md 💾")
+        else:
+            await query.edit_message_text("Не удалось сохранить.")
 
     # ── Reading channel: "✓ Прочитано" button ──
     elif data.startswith("read:"):
@@ -1034,6 +1057,7 @@ def main() -> None:
     application.add_handler(CommandHandler("whoop_on", setup_whoop_command))
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
     application.add_handler(CommandHandler("myid", myid_command))
+    application.add_handler(CommandHandler("q", quote_command))
     application.add_handler(CommandHandler("income", income_command))
     application.add_handler(CommandHandler("process", process_command))
 
