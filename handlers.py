@@ -2118,15 +2118,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if remind_name:
         clean_response = remind_response
 
-    # Late night: append level-appropriate sleep nudge
-    if sleep_level > 0:
-        nudge_text = random.choice(REMINDERS["sleep"][sleep_level])
-        sleep_nudge = f"\n\n---\nRin: {nudge_text}"
-        if clean_response:
-            clean_response += sleep_nudge
-        else:
-            response += sleep_nudge
-
     # Сохраняем в историю (чистый ответ без SAVE-тегов)
     history.append({"role": "user", "content": user_message})
     history.append({"role": "assistant", "content": clean_response or response})

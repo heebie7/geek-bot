@@ -1061,14 +1061,7 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"whoop_weekly_{OWNER_CHAT_ID}",
     )
-    # Sleep reminders: 3-level escalation (01:05, 01:35, 02:05)
-    for hour, minute in [(1, 5), (1, 35), (2, 5)]:
-        job_queue.run_daily(
-            sleep_reminder_job,
-            time=time(hour=hour, minute=minute, tzinfo=TZ),
-            chat_id=OWNER_CHAT_ID,
-            name=f"sleep_reminder_{OWNER_CHAT_ID}",
-        )
+    # Sleep reminders removed — handled by Claude Code hooks instead
     # Monday review at 10:00 (before WHOOP weekly at 11:00)
     job_queue.run_daily(
         monday_review,
