@@ -1850,6 +1850,51 @@ async def quote_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+# ── Group Цитаты topic handler ────────────────────────────────────────────────
+
+
+async def handle_group_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ловит текстовые сообщения в топике Цитаты и показывает выбор источника."""
+    from config import READING_GROUP_ID, QUOTES_TOPIC_ID
+    from tasks import get_today_reading_sources, save_quote
+
+    msg = update.message
+    if not msg or not msg.text:
+        return
+
+    # Only in the Цитаты topic
+    if msg.chat_id != READING_GROUP_ID:
+        return
+    if msg.message_thread_id != QUOTES_TOPIC_ID:
+        return
+
+    quote_text = msg.text.strip()
+    if not quote_text:
+        return
+
+    sources = get_today_reading_sources()
+
+    if not sources:
+        result = save_quote(quote_text, "reading")
+        if result:
+            await msg.reply_text("Сохранено 💾", reply_to_message_id=msg.message_id)
+        return
+
+    context.user_data["pending_quote"] = quote_text
+
+    keyboard = []
+    for display_name, slug in sources:
+        cb_data = f"quote_src:{slug}"[:64]
+        keyboard.append([InlineKeyboardButton(display_name, callback_data=cb_data)])
+    keyboard.append([InlineKeyboardButton("Другой источник", callback_data="quote_src:other")])
+
+    await msg.reply_text(
+        "Куда?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_to_message_id=msg.message_id,
+    )
+
+
 # ── Channel quote handler ─────────────────────────────────────────────────────
 
 

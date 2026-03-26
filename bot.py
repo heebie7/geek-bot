@@ -70,7 +70,7 @@ from handlers import (
     whoop_weekly_summary, monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_photo_note, handle_message, handle_remind_callback,
-    handle_channel_quote, quote_command,
+    handle_channel_quote, quote_command, handle_group_quote,
     income_command, process_command, handle_csv_upload,
 )
 from meal_data import generate_weekly_menu
@@ -1119,6 +1119,12 @@ def main() -> None:
 
     # Обработка CSV файлов
     application.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
+
+    # Обработка топика Цитаты в группе (до общего handler)
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
+        handle_group_quote,
+    ))
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
