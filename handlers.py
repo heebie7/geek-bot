@@ -1421,7 +1421,7 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
                     max_tokens=200,
                     skip_context=True,
                     custom_system=geek_motivation_system,
-                    use_pro=False,
+                    use_pro=True,
                 )
                 motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
                 if motivation_text:
@@ -1626,7 +1626,7 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
                     max_tokens=200,
                     skip_context=True,
                     custom_system=geek_motivation_system,
-                    use_pro=False,
+                    use_pro=True,
                 )
                 motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
                 if motivation_text:
