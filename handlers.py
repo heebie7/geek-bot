@@ -200,11 +200,19 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )])
 
     keyboard = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text(
-        "\n".join(msg_lines),
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
+    text = "\n".join(msg_lines)
+    try:
+        await update.message.reply_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        # Markdown parsing fails on special chars in tasks — fallback to plain text
+        await update.message.reply_text(
+            text.replace("*", ""),
+            reply_markup=keyboard
+        )
 
 
 async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
