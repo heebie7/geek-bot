@@ -132,7 +132,6 @@ PROJECT_EMOJI = {
     "geek-bot": "\U0001f916",             # 🤖
     "therapy-bot": "\U0001f4ac",          # 💬
     "neurotype-mismatch": "\U0001f52c",   # 🔬
-    "openclaw": "\U0001f43e",             # 🐾
     "\u043f\u0435\u0440\u0435\u0435\u0437\u0434": "\u2708\ufe0f",              # переезд: ✈️
     "ifs-\u0441\u0435\u0440\u0442\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f": "\U0001f4dc",  # ifs-сертификация: 📜
     "\u0444\u0438\u043d\u0443\u0447\u0451\u0442": "\U0001f4ca",                # финучёт: 📊
@@ -143,7 +142,7 @@ PROJECT_HEADERS = {
     "geek-bot": "#### geek-bot",
     "therapy-bot": "#### therapy-bot",
     "neurotype-mismatch": "#### Исследование: Neurotype Mismatch",
-    "openclaw": "#### OpenClaw",
+
     "переезд": "#### Переезд",
     "ifs-сертификация": "#### Сертификация IFS",
     "финучёт": "#### Финансовый учёт — допилить",
