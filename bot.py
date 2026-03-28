@@ -38,7 +38,8 @@ from tasks import (
     suggest_zone_for_task, create_rawnote,
     _task_hash, _parse_sensory_menu,
     _format_sensory_menu_for_prompt, _sensory_hardcoded_response,
-    check_task_deadlines,
+    check_task_deadlines, clear_today_section,
+    today_morning_prompt, today_evening_review,
 )
 from joy import get_joy_stats_week, log_joy, _joy_items_cache
 from llm import (
@@ -163,6 +164,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Geek online. Что случилось.",
             reply_markup=get_main_keyboard("geek")
         )
+
+    # ── Сегодня: очистить/оставить ──
+    elif data == "clear_today":
+        if clear_today_section():
+            await query.edit_message_text("Секция «Сегодня» очищена.")
+        else:
+            await query.edit_message_text("Не удалось очистить — попробуй вручную.")
+
+    elif data == "keep_today":
+        await query.edit_message_text("Оставила как есть.")
 
     # ── Overview callbacks ──
     elif data == "todo":
@@ -1108,6 +1119,20 @@ def main() -> None:
         time=time(hour=9, minute=0, tzinfo=TZ),
         chat_id=OWNER_CHAT_ID,
         name=f"task_deadlines_{OWNER_CHAT_ID}",
+    )
+    # Утренний разбор «Сегодня» — 11:00 (показать незавершённое с вчера)
+    job_queue.run_daily(
+        today_morning_prompt,
+        time=time(hour=11, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"today_morning_{OWNER_CHAT_ID}",
+    )
+    # Вечерний разбор «Сегодня» — 21:00 (показать список, предложить очистить)
+    job_queue.run_daily(
+        today_evening_review,
+        time=time(hour=21, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"today_evening_{OWNER_CHAT_ID}",
     )
     logger.info(f"WHOOP, Monday review, and task deadline jobs scheduled for owner {OWNER_CHAT_ID}")
 

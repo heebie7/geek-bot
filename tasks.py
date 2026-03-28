@@ -55,6 +55,88 @@ def get_life_tasks() -> str:
     return content
 
 
+def get_today_tasks() -> list:
+    """Получить открытые задачи из секции ## Сегодня."""
+    content = get_life_tasks()
+    in_section = False
+    tasks = []
+    for line in content.split('\n'):
+        if line.strip() == '## Сегодня':
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith('## '):
+                break
+            if line.startswith('- [ ] '):
+                tasks.append(line[6:].strip())
+    return tasks
+
+
+def clear_today_section() -> bool:
+    """Удалить все открытые задачи из секции ## Сегодня."""
+    content = get_life_tasks()
+    lines = content.split('\n')
+    result_lines = []
+    in_section = False
+    for line in lines:
+        if line.strip() == '## Сегодня':
+            in_section = True
+            result_lines.append(line)
+            continue
+        if in_section:
+            if line.startswith('## ') or line.startswith('---'):
+                in_section = False
+                result_lines.append(line)
+            elif line.startswith('- [ ] '):
+                pass  # Drop open tasks
+            else:
+                result_lines.append(line)
+        else:
+            result_lines.append(line)
+    new_content = '\n'.join(result_lines)
+    result = save_writing_file("life/tasks.md", new_content, "Clear today section")
+    _invalidate_tasks_cache()
+    return result
+
+
+async def today_morning_prompt(context) -> None:
+    """11:00 — показать незавершённое с вчера, предложить очистить."""
+    chat_id = context.job.chat_id
+    try:
+        tasks = get_today_tasks()
+        if not tasks:
+            return
+        task_list = "\n".join(f"• {t}" for t in tasks)
+        text = f"Осталось с вчера в «Сегодня»:\n\n{task_list}\n\nОчистить?"
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Очистить", callback_data="clear_today"),
+            InlineKeyboardButton("Оставить", callback_data="keep_today"),
+        ]])
+        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"today_morning_prompt error: {e}")
+
+
+async def today_evening_review(context) -> None:
+    """21:00 — показать задачи из «Сегодня», предложить очистить."""
+    chat_id = context.job.chat_id
+    try:
+        tasks = get_today_tasks()
+        if not tasks:
+            return
+        task_list = "\n".join(f"• {t}" for t in tasks)
+        text = f"Вечерний разбор «Сегодня»:\n\n{task_list}\n\nОчистить секцию?"
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Очистить всё", callback_data="clear_today"),
+            InlineKeyboardButton("Оставить", callback_data="keep_today"),
+        ]])
+        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"today_evening_review error: {e}")
+
+
 def add_task_to_zone(task: str, destination: str) -> bool:
     """Добавить задачу в зону или проект в life/tasks.md.
 
@@ -64,6 +146,7 @@ def add_task_to_zone(task: str, destination: str) -> bool:
 
     # Маппинг зон на заголовки
     zone_headers = {
+        "сегодня": "## Сегодня",
         "фундамент": "## Фундамент",
         "кайф": "## Кайф",
         "драйв": "## Драйв",
