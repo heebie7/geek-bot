@@ -92,9 +92,8 @@ def get_main_keyboard(mode: str = "geek"):
     """Главная клавиатура."""
     keyboard = [
         [
-            InlineKeyboardButton("Todo", callback_data="todo"),
-            InlineKeyboardButton("Неделя", callback_data="week"),
             InlineKeyboardButton("Шаги", callback_data="next_steps"),
+            InlineKeyboardButton("Неделя", callback_data="week"),
         ],
         [
             InlineKeyboardButton("Сон", callback_data="sleep"),
@@ -108,7 +107,7 @@ def get_main_keyboard(mode: str = "geek"):
 def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
-        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🌉 Bridge"), KeyboardButton("📋 Todo")],
+        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🌉 Bridge"), KeyboardButton("⚡ Шаги")],
         [KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy"), KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

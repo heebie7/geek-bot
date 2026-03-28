@@ -39,7 +39,7 @@ from tasks import (
     _task_hash, _parse_sensory_menu,
     _format_sensory_menu_for_prompt, _sensory_hardcoded_response,
     check_task_deadlines, clear_today_section,
-    today_morning_prompt, today_evening_review, get_today_tasks,
+    today_morning_prompt, today_evening_review,
 )
 from joy import get_joy_stats_week, log_joy, _joy_items_cache
 from llm import (
@@ -56,7 +56,7 @@ from keyboards import (
 )
 from handlers import (
     start, switch_to_geek,
-    dashboard_command, todo_command, week_command,
+    dashboard_command, week_command,
     tasks_command, addtask_command, done_command,
     status, profile,
     sleep_reminder, food_command, sport_reminder,
@@ -176,35 +176,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text("Оставила как есть.")
 
     # ── Overview callbacks ──
-    elif data == "todo":
-        tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
-        calendar = get_week_events()
-        current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
-        today_items = get_today_tasks()
-        today_section = ""
-        if today_items:
-            today_section = "\n## Сегодня (мелкие дела):\n" + "\n".join(f"- {t}" for t in today_items) + "\n"
-
-        prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
-
-## Задачи из списка:
-{tasks}
-{today_section}
-## Календарь на неделю:
-{calendar}
-
-Сегодня: {current_time}
-
-Выдели:
-1. Что в календаре сегодня и завтра
-2. Насколько загружена неделя
-3. Какие задачи стоит сделать (включая мелкие из «Сегодня» если есть)
-
-Будь краткой."""
-
-        response = await get_llm_response(prompt, mode="geek")
-        await query.message.reply_text(response)
-
     elif data == "week":
         calendar = get_week_events()
         await query.message.reply_text(f"Календарь на неделю:\n{calendar}")
@@ -1052,7 +1023,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("geek", switch_to_geek))
     application.add_handler(CommandHandler("dashboard", dashboard_command))
-    application.add_handler(CommandHandler("todo", todo_command))
+
     application.add_handler(CommandHandler("week", week_command))
     application.add_handler(CommandHandler("next", next_steps_command))
     application.add_handler(CommandHandler("tasks", tasks_command))
