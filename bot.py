@@ -39,7 +39,7 @@ from tasks import (
     _task_hash, _parse_sensory_menu,
     _format_sensory_menu_for_prompt, _sensory_hardcoded_response,
     check_task_deadlines, clear_today_section,
-    today_morning_prompt, today_evening_review,
+    today_morning_prompt, today_evening_review, get_today_tasks,
 )
 from joy import get_joy_stats_week, log_joy, _joy_items_cache
 from llm import (
@@ -180,12 +180,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         tasks = load_file(TASKS_FILE, "Задачи пока не добавлены.")
         calendar = get_week_events()
         current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
+        today_items = get_today_tasks()
+        today_section = ""
+        if today_items:
+            today_section = "\n## Сегодня (мелкие дела):\n" + "\n".join(f"- {t}" for t in today_items) + "\n"
 
         prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
 
 ## Задачи из списка:
 {tasks}
-
+{today_section}
 ## Календарь на неделю:
 {calendar}
 
@@ -194,7 +198,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 Выдели:
 1. Что в календаре сегодня и завтра
 2. Насколько загружена неделя
-3. Какие задачи стоит сделать
+3. Какие задачи стоит сделать (включая мелкие из «Сегодня» если есть)
 
 Будь краткой."""
 
