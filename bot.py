@@ -30,6 +30,7 @@ from config import (
     TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
     READING_GROUP_ID, READING_TOPIC_ID, READING_STATE_FILE,
+    BOOK_TRIAGE_STATE_FILE,
 )
 from prompts import SENSORY_INDRA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
 from storage import load_file, get_week_events, is_muted, load_morning_cache
@@ -155,6 +156,61 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         except Exception:
             pass  # Message might be too old to edit
+        return
+
+    # ── Book triage ──
+    elif data.startswith("bt:"):
+        parts = data.split(":")
+        if len(parts) == 3:
+            _, action, short_id = parts
+            action_labels = {
+                "urgent": "🔥 Срочно — добавлю в очередь",
+                "later": "📚 Потом — в конец очереди",
+                "teach": "🎓 Teach-пересказ",
+                "ref": "📎 Справочное",
+                "skip": "⏭ Пропущено",
+            }
+            try:
+                from storage import get_writing_file, save_writing_file
+                import json as _json
+                raw = get_writing_file(BOOK_TRIAGE_STATE_FILE)
+                state = _json.loads(raw) if raw else {"known": {}, "pending": {}}
+                if "pending" not in state:
+                    state["pending"] = {}
+                if "known" not in state:
+                    state["known"] = {}
+
+                # Find book by short_id in pending
+                book_path = None
+                book_info = None
+                for path, info in state.get("pending", {}).items():
+                    if info.get("short_id") == short_id:
+                        book_path = path
+                        book_info = info
+                        break
+
+                if book_path:
+                    # Move from pending to known with decision
+                    state["known"][book_path] = state["pending"].pop(book_path)
+                    state["known"][book_path]["decision"] = action
+                    state["known"][book_path]["decided_at"] = datetime.now(TZ).isoformat()
+                    save_writing_file(
+                        BOOK_TRIAGE_STATE_FILE,
+                        _json.dumps(state, ensure_ascii=False, indent=2),
+                        f"book-triage: {action} — {book_info.get('title', '?')}"
+                    )
+                    label = action_labels.get(action, action)
+                    title = book_info.get("title", "?")
+                    try:
+                        await query.edit_message_text(f"{title}\n\n✓ {label}")
+                    except Exception:
+                        pass
+                    await query.answer(label)
+                else:
+                    await query.answer("Книга не найдена в state")
+            except Exception as e:
+                logger.error(f"Book triage callback error: {e}")
+                await query.answer("Ошибка обработки")
         return
 
     # ── Mode switching ──
