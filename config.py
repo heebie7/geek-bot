@@ -91,6 +91,19 @@ READING_GROUP_ID = int(os.getenv("READING_GROUP_ID", "-1003821528541"))
 READING_TOPIC_ID = 6  # "Читалка" topic thread_id
 READING_STATE_FILE = "life/reading-reactions.json"
 BOOK_TRIAGE_STATE_FILE = "life/book-triage-state.json"
+DIGEST_DIR = "writing/reading-mobile"
+
+BOOK_DIGEST_PROMPT = """Ты — research assistant. Сделай краткий digest книги по главам.
+
+Формат:
+- Заголовок: "Digest: {title}"
+- Для каждой главы/раздела: 3-5 ключевых идей, одна цитата если есть
+- В конце: "Зачем читать целиком" (2-3 предложения) + "Связь с практикой" (IFS, нейроаффирмация, терапия)
+- Русский язык
+- Общий объём: 1000-2000 слов
+
+Книга:
+{content}"""
 QUOTES_TOPIC_ID = 54  # "Цитаты" topic thread_id
 
 # ── Owner ──────────────────────────────────────────────────────────────

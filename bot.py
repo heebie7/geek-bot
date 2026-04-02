@@ -108,6 +108,70 @@ def _trim_to_telegram_limit(text: str, limit: int = 4096) -> str:
     return trimmed + "\n..."
 
 
+# ── Book digest background task ────────────────────────────────────
+
+async def _generate_book_digest(book_path: str, book_info: dict, context):
+    """Background task: read book from GitHub, generate digest via Gemini, save to reading-mobile."""
+    from storage import get_writing_file, save_writing_file
+    from config import BOOK_DIGEST_PROMPT, DIGEST_DIR, gemini_client, GEMINI_MODEL
+    import google.genai as genai
+
+    title = book_info.get("title", "?")
+    logger.info(f"Digest: starting for {title} ({book_path})")
+
+    try:
+        # 1. Read book from GitHub
+        content = get_writing_file(book_path)
+        if not content:
+            logger.error(f"Digest: could not read {book_path}")
+            return
+
+        # 2. Generate digest via Gemini Flash
+        prompt = BOOK_DIGEST_PROMPT.format(title=title, content=content)
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[prompt],
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=4000,
+            ),
+        )
+
+        if not response.text:
+            logger.error(f"Digest: empty Gemini response for {title}")
+            return
+
+        digest_text = response.text
+        logger.info(f"Digest: generated {len(digest_text)} chars for {title}")
+
+        # 3. Save to reading-mobile (synced to phone via Syncthing)
+        from pathlib import Path
+        slug = Path(book_path).stem
+        digest_path = f"{DIGEST_DIR}/{slug}-digest.md"
+        save_writing_file(
+            digest_path,
+            digest_text,
+            f"digest: {title}"
+        )
+        logger.info(f"Digest: saved to {digest_path}")
+
+        # 4. Notify user in Telegram
+        await context.bot.send_message(
+            chat_id=OWNER_CHAT_ID,
+            text=f"Digest готов: {title}\nСохранён в reading-mobile",
+            disable_notification=True,
+        )
+
+    except Exception as e:
+        logger.error(f"Digest generation error for {title}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=OWNER_CHAT_ID,
+                text=f"Digest ошибка: {title}\n{str(e)[:200]}",
+            )
+        except Exception:
+            pass
+
+
 # ── Callback dispatcher ─────────────────────────────────────────────
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -163,10 +227,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parts = data.split(":")
         if len(parts) == 3:
             _, action, short_id = parts
+            # "teach" is legacy alias for "digest"
+            if action == "teach":
+                action = "digest"
             action_labels = {
                 "urgent": "🔥 Срочно — добавлю в очередь",
                 "later": "📚 Потом — в конец очереди",
-                "teach": "🎓 Teach-пересказ",
+                "digest": "📖 Digest — генерирую...",
                 "ref": "📎 Справочное",
                 "skip": "⏭ Пропущено",
             }
@@ -180,7 +247,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if "known" not in state:
                     state["known"] = {}
 
-                # Find book by short_id in pending
+                # Find book by short_id in pending or known
                 book_path = None
                 book_info = None
                 for path, info in state.get("pending", {}).items():
@@ -188,10 +255,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         book_path = path
                         book_info = info
                         break
+                if not book_path:
+                    for path, info in state.get("known", {}).items():
+                        if info.get("short_id") == short_id:
+                            book_path = path
+                            book_info = info
+                            break
 
                 if book_path:
                     # Move from pending to known with decision
-                    state["known"][book_path] = state["pending"].pop(book_path)
+                    if book_path in state.get("pending", {}):
+                        state["known"][book_path] = state["pending"].pop(book_path)
                     state["known"][book_path]["decision"] = action
                     state["known"][book_path]["decided_at"] = datetime.now(TZ).isoformat()
                     save_writing_file(
@@ -206,6 +280,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     except Exception:
                         pass
                     await query.answer(label)
+
+                    # If digest — launch background generation
+                    if action == "digest":
+                        import asyncio
+                        asyncio.create_task(
+                            _generate_book_digest(book_path, book_info, context)
+                        )
                 else:
                     await query.answer("Книга не найдена в state")
             except Exception as e:
