@@ -426,6 +426,8 @@ FOOD_RECOGNITION_PROMPT = """Analyze this food photo. Return JSON only, no other
   "confidence": 0.0-1.0
 }}
 
+If the photo shows a nutrition label or packaging with KBJU/nutrition facts table — READ the values from the label, do not estimate. Set confidence to 0.9+ for label reads.
+If the photo shows prepared food — estimate based on visual assessment.
 If caption is provided, use it as a hint for dish identification.
 If multiple dishes visible, list the main one. Estimate for a single standard serving unless photo suggests otherwise.
 If portion looks small or large, adjust KBJU estimates proportionally (not just label).
