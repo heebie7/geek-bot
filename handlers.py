@@ -40,7 +40,7 @@ from tasks import (
     suggest_zone_for_task, create_rawnote, parse_save_tag,
     _task_hash, _get_priority_tasks, _parse_sensory_menu,
     _get_random_sensory_suggestion, _format_sensory_menu_for_prompt,
-    _sensory_hardcoded_response, check_task_deadlines,
+    _sensory_hardcoded_response, check_task_deadlines, get_today_tasks,
 )
 from joy import get_joy_stats_week, log_joy, _joy_items_cache
 from llm import (
@@ -233,8 +233,13 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if sensory_count == 0:
         joy_context += "\n⚠️ Sensory = 0 за неделю."
 
-    prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
+    today_tasks = get_today_tasks()
+    today_section = ""
+    if today_tasks:
+        today_section = "\n## Сегодня:\n" + "\n".join(f"- {t}" for t in today_tasks) + "\n"
 
+    prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
+{today_section}
 ## Задачи с приоритетами:
 {priority_tasks}
 
@@ -248,8 +253,8 @@ async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 Выдели:
 1. Что в календаре сегодня и завтра
-2. Состояние тела: recovery, сон — и что это значит для нагрузки сегодня
-3. Срочные задачи (⏫) — сделать первыми
+2. {"Задачи на сегодня (секция Сегодня) — первыми" if today_tasks else "Срочные задачи (⏫) — сделать первыми"}
+3. Состояние тела: recovery, сон — и что это значит для нагрузки сегодня
 4. Обычные задачи (🔼) — если есть ресурс
 5. Общая оценка: насколько загружена неделя
 
