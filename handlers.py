@@ -34,6 +34,7 @@ from storage import (
     get_reminders, is_muted, save_morning_cache,
     load_whoop_patterns, load_whoop_baselines,
     load_latest_indra_session, load_indra_sessions_week,
+    load_food_log, save_food_log, load_kitchen_dishes,
 )
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -54,10 +55,15 @@ from keyboards import (
     get_joy_keyboard, get_joy_items_keyboard,
     get_task_confirm_keyboard, get_destination_keyboard,
     get_priority_keyboard,
+    food_confirm_keyboard, food_is_food_keyboard,
 )
 from finance import handle_csv_upload, income_command, process_command  # noqa: F401 — re-exported for bot.py
 from whoop import whoop_client
 from meal_data import generate_weekly_menu
+from food import (
+    recognize_food, match_kitchen_dish, build_food_entry,
+    format_food_result, format_daily_summary,
+)
 
 
 # ── Command handlers ─────────────────────────────────────────────────────────
@@ -1976,24 +1982,144 @@ async def handle_channel_quote(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_photo_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработка фото в режиме заметки."""
-    if not context.user_data.get("note_mode"):
+    """Обработка фото: заметки (note_mode) или распознавание еды."""
+    if context.user_data.get("note_mode"):
+        caption = update.message.caption or "[фото без подписи]"
+        buffer = context.user_data.get("note_buffer", [])
+        buffer.append(f"[фото]: {caption}")
+        context.user_data["note_buffer"] = buffer
+        try:
+            from telegram import ReactionTypeEmoji
+            await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
+        except Exception:
+            pass
         return
-    caption = update.message.caption or "[фото без подписи]"
-    buffer = context.user_data.get("note_buffer", [])
-    buffer.append(f"[фото]: {caption}")
-    context.user_data["note_buffer"] = buffer
-    try:
-        from telegram import ReactionTypeEmoji
-        await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
-    except Exception:
-        pass
+    # Not in note mode → food recognition
+    await handle_food_photo(update, context)
+
+
+async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Recognize food from photo via Gemini Vision."""
+    # Download photo
+    photo = update.message.photo[-1]  # largest size
+    file = await photo.get_file()
+    photo_bytes = await file.download_as_bytearray()
+
+    caption = update.message.caption or None
+
+    # Typing indicator
+    await update.message.chat.send_action("typing")
+
+    # Recognize
+    recognition = recognize_food(bytes(photo_bytes), caption)
+    confidence = recognition.get("confidence", 0.0)
+
+    if confidence < 0.3:
+        # Not food — silently ignore
+        return
+
+    # Try kitchen match
+    dishes = load_kitchen_dishes()
+    match = match_kitchen_dish(recognition.get("name", ""), dishes)
+    entry = build_food_entry(recognition, match, caption)
+
+    # Clear any stale pending food entry
+    context.user_data.pop("pending_food", None)
+    context.user_data["pending_food"] = entry
+
+    text = format_food_result(entry)
+
+    if confidence < 0.6:
+        # Mid-confidence — ask if food
+        await update.message.reply_text(
+            f"Это еда?\n\n{text}",
+            reply_markup=food_is_food_keyboard(),
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=food_confirm_keyboard(),
+        )
+
+
+async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user confirmed food entry."""
+    entry = context.user_data.pop("pending_food", None)
+    if not entry:
+        await query.edit_message_text("Данные потеряны. Отправь фото ещё раз.")
+        return
+
+    log_data = load_food_log()
+    log_data["log"].append(entry)
+    save_food_log(log_data)
+
+    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), entry["date"])
+    original = query.message.text or ""
+    await query.edit_message_text(f"{original}\n\n✅ Записано\n\n{summary}")
+
+
+async def handle_food_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user rejected food entry."""
+    context.user_data.pop("pending_food", None)
+    await query.edit_message_text("Отменено.")
+
+
+async def handle_food_correct(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user wants to correct food recognition."""
+    context.user_data["food_correcting"] = True
+    context.user_data["food_correct_expire"] = datetime.now(TZ) + timedelta(minutes=5)
+    await query.edit_message_text("Напиши что это было (например: 'гречка с курицей').\nИли 'отмена' для отмены.")
+
+
+async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """22:00 daily job: send food summary for the day."""
+    log_data = load_food_log()
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
+    chat_id = context.job.chat_id or OWNER_CHAT_ID
+    await context.bot.send_message(chat_id=chat_id, text=f"🍽 Итоги дня по еде:\n\n{summary}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка текстовых сообщений."""
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
+
+    # ── Food correction mode (before all other routing) ──
+    if context.user_data.get("food_correcting"):
+        expire = context.user_data.get("food_correct_expire")
+        if expire and datetime.now(TZ) > expire:
+            # Expired — clear state and fall through
+            context.user_data.pop("food_correcting", None)
+            context.user_data.pop("food_correct_expire", None)
+        elif user_message and user_message.lower().strip() == "отмена":
+            context.user_data.pop("food_correcting", None)
+            context.user_data.pop("food_correct_expire", None)
+            await update.message.reply_text("Отменено.")
+            return
+        elif user_message:
+            context.user_data.pop("food_correcting", None)
+            context.user_data.pop("food_correct_expire", None)
+            # Re-recognize with text as caption (no photo)
+            await update.message.chat.send_action("typing")
+            recognition = recognize_food(None, user_message)
+            confidence = recognition.get("confidence", 0.0)
+            if confidence < 0.3:
+                await update.message.reply_text("Не удалось распознать. Попробуй описать точнее.")
+                return
+            dishes = load_kitchen_dishes()
+            match = match_kitchen_dish(recognition.get("name", ""), dishes)
+            entry = build_food_entry(recognition, match, user_message)
+            context.user_data["pending_food"] = entry
+            text = format_food_result(entry)
+            if confidence < 0.6:
+                await update.message.reply_text(
+                    f"Это еда?\n\n{text}",
+                    reply_markup=food_is_food_keyboard("fix"),
+                )
+            else:
+                await update.message.reply_text(text, reply_markup=food_confirm_keyboard("fix"))
+            return
 
     # Обработка кнопок reply keyboard
     if user_message == "🔥 Dashboard":

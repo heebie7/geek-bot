@@ -23,6 +23,7 @@ from config import (
     TZ, logger,
     MORNING_CACHE_FILE,
     WHOOP_PATTERNS_PATH, WHOOP_BASELINES_PATH, INDRA_SESSIONS_DIR,
+    FOOD_LOG_FILE, KITCHEN_REPO, KITCHEN_DATA_FILE, DEFAULT_FOOD_TARGETS,
 )
 
 
@@ -654,4 +655,61 @@ def get_week_events() -> str:
     except Exception as e:
         logger.error(f"Calendar error: {e}")
         return f"Ошибка календаря: {e}"
+
+
+# === FOOD TRACKING ===
+
+_kitchen_cache = None
+_kitchen_cache_date = None
+
+
+def load_food_log() -> dict:
+    """Load food log from Writing repo. Returns default structure if not found."""
+    raw = get_writing_file(FOOD_LOG_FILE)
+    if raw:
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Failed to parse food log: {e}")
+    return {"daily_targets": dict(DEFAULT_FOOD_TARGETS), "log": []}
+
+
+def save_food_log(data: dict) -> bool:
+    """Save food log to Writing repo via save_writing_file (handles SHA)."""
+    content = json.dumps(data, ensure_ascii=False, indent=2)
+    return save_writing_file(FOOD_LOG_FILE, content, "food log update")
+
+
+def load_kitchen_dishes() -> list:
+    """Load dishes from family-kitchen repo. Cached daily. KBJU cast to int."""
+    global _kitchen_cache, _kitchen_cache_date
+    today = datetime.now(TZ).date()
+    if _kitchen_cache is not None and _kitchen_cache_date == today:
+        return _kitchen_cache
+
+    if not GITHUB_TOKEN:
+        logger.warning("No GITHUB_TOKEN for kitchen repo")
+        return []
+    try:
+        g = Github(GITHUB_TOKEN)
+        repo = g.get_repo(KITCHEN_REPO)
+        content = repo.get_contents(KITCHEN_DATA_FILE)
+        raw = base64.b64decode(content.content).decode("utf-8")
+        data = json.loads(raw)
+        dishes = data.get("dishes", [])
+        # Cast KBJU string fields to int
+        for dish in dishes:
+            for field in ("kcal", "protein", "fat", "carbs"):
+                if field in dish and isinstance(dish[field], str):
+                    try:
+                        dish[field] = int(dish[field])
+                    except ValueError:
+                        dish[field] = 0
+        _kitchen_cache = dishes
+        _kitchen_cache_date = today
+        logger.info(f"Loaded {len(dishes)} dishes from kitchen repo")
+        return dishes
+    except Exception as e:
+        logger.error(f"Failed to load kitchen dishes: {e}")
+        return []
 

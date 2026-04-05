@@ -244,3 +244,26 @@ def get_joy_items_keyboard(category: str) -> InlineKeyboardMarkup:
     ])
 
     return InlineKeyboardMarkup(keyboard)
+
+
+# ── Food tracking keyboards ──────────────────────────────────────────
+
+def food_confirm_keyboard(entry_id: str = "0") -> InlineKeyboardMarkup:
+    """Keyboard for confirming recognized food: OK / Cancel / Correct."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Ок", callback_data=f"food_ok_{entry_id}"),
+            InlineKeyboardButton("❌ Не то", callback_data=f"food_no_{entry_id}"),
+            InlineKeyboardButton("✏️ Поправить", callback_data=f"food_fix_{entry_id}"),
+        ]
+    ])
+
+
+def food_is_food_keyboard(entry_id: str = "0") -> InlineKeyboardMarkup:
+    """Keyboard for mid-confidence: is this food?"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Да, еда", callback_data=f"food_yes_{entry_id}"),
+            InlineKeyboardButton("Нет", callback_data=f"food_no_{entry_id}"),
+        ]
+    ])

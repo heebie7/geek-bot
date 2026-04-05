@@ -74,6 +74,8 @@ from handlers import (
     handle_photo_note, handle_message, handle_remind_callback,
     handle_channel_quote, quote_command, handle_group_quote,
     income_command, process_command, handle_csv_upload,
+    handle_food_confirm, handle_food_cancel, handle_food_correct,
+    food_evening_summary,
 )
 from meal_data import generate_weekly_menu
 from whoop import whoop_client
@@ -1080,6 +1082,24 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         context.user_data.pop("pending_steps", None)
         await query.edit_message_text(query.message.text.split("\n\n—")[0])
 
+    # ── Food tracking ──
+    elif data.startswith("food_ok_"):
+        await handle_food_confirm(query, context)
+    elif data.startswith("food_no_"):
+        await handle_food_cancel(query, context)
+    elif data.startswith("food_fix_"):
+        await handle_food_correct(query, context)
+    elif data.startswith("food_yes_"):
+        # Mid-confidence confirmed as food → show full confirm keyboard
+        from food import format_food_result
+        from keyboards import food_confirm_keyboard as _food_kb
+        entry = context.user_data.get("pending_food")
+        if entry:
+            text = format_food_result(entry)
+            await query.edit_message_text(text, reply_markup=_food_kb())
+        else:
+            await query.edit_message_text("Данные потеряны. Отправь фото ещё раз.")
+
 
 # ── Bot commands menu ────────────────────────────────────────────────
 
@@ -1245,7 +1265,14 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"today_evening_{OWNER_CHAT_ID}",
     )
-    logger.info(f"WHOOP, Monday review, and task deadline jobs scheduled for owner {OWNER_CHAT_ID}")
+    # Food evening summary — 22:00
+    job_queue.run_daily(
+        food_evening_summary,
+        time=time(hour=22, minute=0, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"food_evening_{OWNER_CHAT_ID}",
+    )
+    logger.info(f"WHOOP, Monday review, task deadline, and food jobs scheduled for owner {OWNER_CHAT_ID}")
 
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))

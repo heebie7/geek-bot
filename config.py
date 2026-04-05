@@ -81,6 +81,18 @@ WHOOP_PATTERNS_PATH = "life/health/whoop/analytics/patterns.md"
 WHOOP_BASELINES_PATH = "life/health/whoop/analytics/baselines.md"
 INDRA_SESSIONS_DIR = "life/health/indra"
 
+# ── Food tracking ────────────────────────────────────────────────────
+FOOD_LOG_FILE = "life/health/food/food-log.json"
+KITCHEN_REPO = "heebie7/family-kitchen"
+KITCHEN_DATA_FILE = "data.json"
+DEFAULT_FOOD_TARGETS = {
+    "kcal": 1800,
+    "protein": 80,
+    "fiber": 25,
+    "fat": 70,
+    "carbs": 200,
+}
+
 # ── Reading channel (for quote saving) ────────────────────────────────
 
 READING_CHANNEL_ID = int(os.getenv("READING_CHANNEL_ID", "-1003819019136"))
