@@ -1888,6 +1888,22 @@ async def handle_group_quote(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if msg.message_thread_id != QUOTES_TOPIC_ID:
         return
 
+    # Если ждём название источника — сохранить цитату с этим названием
+    awaiting_quote = context.user_data.pop("quote_awaiting_source", None)
+    if awaiting_quote:
+        source_name = msg.text.strip()
+        if not source_name:
+            context.user_data["quote_awaiting_source"] = awaiting_quote
+            await msg.reply_text("Напиши название источника:", reply_to_message_id=msg.message_id)
+            return
+        result = save_quote(awaiting_quote, source_name)
+        if result:
+            slug = re.sub(r'[^\w\s-]', '', source_name.lower()).replace(' ', '-')[:60]
+            await msg.reply_text(f"Сохранено → {slug}.md 💾", reply_to_message_id=msg.message_id)
+        else:
+            await msg.reply_text("Не удалось сохранить.", reply_to_message_id=msg.message_id)
+        return
+
     quote_text = msg.text.strip()
     if not quote_text:
         return
@@ -2689,3 +2705,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
     else:
         await update.message.reply_text(response)
+
+
+# ── Translation topic handlers ───────────────────────────────────────────
+
+
+async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text messages in the Translate topic — auto-translate RU↔EN."""
+    from config import TRANSLATE_TOPIC_ID, READING_GROUP_ID
+    from translate import translate_text
+
+    msg = update.message
+    if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != TRANSLATE_TOPIC_ID:
+        return
+
+    text = msg.text.strip()
+    if not text:
+        return
+
+    await msg.chat.send_action("typing")
+    result = translate_text(text)
+    if result:
+        await msg.reply_text(result)
+    else:
+        await msg.reply_text("Не удалось перевести.")
+
+
+async def handle_translate_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle photo/screenshot messages in the Translate topic — OCR + translate RU↔EN."""
+    from config import TRANSLATE_TOPIC_ID, READING_GROUP_ID
+    from translate import translate_image
+
+    msg = update.message
+    if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != TRANSLATE_TOPIC_ID:
+        return
+
+    photo = msg.photo[-1]
+    file = await photo.get_file()
+    photo_bytes = await file.download_as_bytearray()
+    caption = msg.caption or None
+
+    await msg.chat.send_action("typing")
+    result = translate_image(bytes(photo_bytes), caption)
+    if result:
+        await msg.reply_text(result)
+    else:
+        await msg.reply_text("Не удалось распознать и перевести.")
