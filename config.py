@@ -92,6 +92,7 @@ DEFAULT_FOOD_TARGETS = {
     "fat": 70,
     "carbs": 200,
 }
+FOOD_TOPIC_ID = 17  # "Еда" topic in From Geek group
 
 # ── Reading channel (for quote saving) ────────────────────────────────
 

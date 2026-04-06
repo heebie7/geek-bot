@@ -2043,11 +2043,16 @@ async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 
-async def ate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/ate <food> — log food by text. Checks custom dishes first, then Gemini."""
-    text = " ".join(context.args) if context.args else ""
+async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text messages in the Food topic of From Geek group."""
+    from config import FOOD_TOPIC_ID, READING_GROUP_ID
+    msg = update.message
+    # Only react to messages in the Food topic
+    if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != FOOD_TOPIC_ID:
+        return
+
+    text = msg.text.strip()
     if not text:
-        await update.message.reply_text("Что ела? Напиши: /ate латте")
         return
 
     # Check custom dishes first (instant, no Gemini)
@@ -2059,7 +2064,7 @@ async def ate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         entry = build_custom_entry(custom_match)
         context.user_data["pending_food"] = entry
         result_text = format_food_result(entry)
-        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+        await msg.reply_text(result_text, reply_markup=food_confirm_keyboard())
         return
 
     # Check kitchen DB
@@ -2070,16 +2075,16 @@ async def ate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         entry = build_food_entry(recognition, kitchen_match, text)
         context.user_data["pending_food"] = entry
         result_text = format_food_result(entry)
-        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+        await msg.reply_text(result_text, reply_markup=food_confirm_keyboard())
         return
 
     # Fall back to Gemini text-only recognition
-    await update.message.chat.send_action("typing")
+    await msg.chat.send_action("typing")
     recognition = recognize_food(None, text)
     confidence = recognition.get("confidence", 0.0)
 
     if confidence < 0.3:
-        await update.message.reply_text("Не распознал. Попробуй точнее, например: /ate омлет с сыром")
+        await msg.reply_text("Не распознал. Попробуй точнее.")
         return
 
     entry = build_food_entry(recognition, None, text)
@@ -2088,9 +2093,51 @@ async def ate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     result_text = format_food_result(entry)
 
     if confidence < 0.6:
-        await update.message.reply_text(f"Это еда?\n\n{result_text}", reply_markup=food_is_food_keyboard())
+        await msg.reply_text(f"Это еда?\n\n{result_text}", reply_markup=food_is_food_keyboard())
     else:
-        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+        await msg.reply_text(result_text, reply_markup=food_confirm_keyboard())
+
+
+async def handle_food_topic_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle photo messages in the Food topic of From Geek group."""
+    from config import FOOD_TOPIC_ID, READING_GROUP_ID
+    msg = update.message
+    if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != FOOD_TOPIC_ID:
+        return
+
+    # Download photo
+    photo = msg.photo[-1]
+    file = await photo.get_file()
+    photo_bytes = await file.download_as_bytearray()
+    caption = msg.caption or None
+
+    await msg.chat.send_action("typing")
+    recognition = recognize_food(bytes(photo_bytes), caption)
+    confidence = recognition.get("confidence", 0.0)
+
+    if confidence < 0.3:
+        return  # not food, ignore
+
+    # Try custom dishes if caption provided
+    log_data = load_food_log()
+    custom = log_data.get("custom_dishes", {})
+    custom_match = match_custom_dish(recognition.get("name", ""), custom) if custom else None
+
+    if custom_match:
+        entry = build_custom_entry(custom_match)
+    else:
+        dishes = load_kitchen_dishes()
+        kitchen_match = match_kitchen_dish(recognition.get("name", ""), dishes)
+        entry = build_food_entry(recognition, kitchen_match, caption)
+
+    context.user_data.pop("pending_food", None)
+    context.user_data["pending_food"] = entry
+    text = format_food_result(entry)
+
+    if confidence < 0.6:
+        await msg.reply_text(f"Это еда?\n\n{text}", reply_markup=food_is_food_keyboard())
+    else:
+        await msg.reply_text(text, reply_markup=food_confirm_keyboard())
 
 
 async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None:

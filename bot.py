@@ -76,7 +76,8 @@ from handlers import (
     income_command, process_command, handle_csv_upload,
     handle_food_confirm, handle_food_cancel, handle_food_correct,
     handle_food_save_custom, handle_food_skip_custom,
-    ate_command, food_evening_summary,
+    handle_food_topic_text, handle_food_topic_photo,
+    food_evening_summary,
 )
 from meal_data import generate_weekly_menu
 from whoop import whoop_client
@@ -1205,7 +1206,6 @@ def main() -> None:
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
     application.add_handler(CommandHandler("myid", myid_command))
     application.add_handler(CommandHandler("q", quote_command))
-    application.add_handler(CommandHandler("ate", ate_command))
     application.add_handler(CommandHandler("income", income_command))
     application.add_handler(CommandHandler("process", process_command))
 
@@ -1289,11 +1289,21 @@ def main() -> None:
     # Обработка CSV файлов
     application.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
 
-    # Обработка топика Цитаты в группе (до общего handler)
+    # Обработка группы From Geek: топик Еда (текст и фото) + топик Цитаты
+    # Food topic handlers check thread_id internally and return early if not food topic.
+    # group_quote handler runs in group=1 so it processes non-food messages.
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
+        handle_food_topic_text,
+    ))
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.PHOTO,
+        handle_food_topic_photo,
+    ))
     application.add_handler(MessageHandler(
         filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
         handle_group_quote,
-    ))
+    ), group=1)
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
