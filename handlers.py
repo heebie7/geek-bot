@@ -2055,6 +2055,41 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
     if not text:
         return
 
+    # ── Food naming mode (save custom dish with chosen name) ──
+    if context.user_data.get("food_naming"):
+        expire = context.user_data.get("food_naming_expire")
+        if expire and datetime.now(TZ) > expire:
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            context.user_data.pop("last_confirmed_food", None)
+        elif text.lower() == "отмена":
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            context.user_data.pop("last_confirmed_food", None)
+            await msg.reply_text("Не сохраняю.")
+            return
+        else:
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            entry = context.user_data.pop("last_confirmed_food", None)
+            if entry:
+                custom_name = text
+                log_data = load_food_log()
+                if "custom_dishes" not in log_data:
+                    log_data["custom_dishes"] = {}
+                log_data["custom_dishes"][custom_name] = {
+                    "kcal": entry["kcal"],
+                    "protein": entry["protein"],
+                    "fat": entry["fat"],
+                    "carbs": entry["carbs"],
+                    "fiber": entry["fiber"],
+                }
+                save_food_log(log_data)
+                await msg.reply_text(f"⭐ «{custom_name}» сохранено как частое блюдо")
+            else:
+                await msg.reply_text("Данные потеряны.")
+            return
+
     # Check custom dishes first (instant, no Gemini)
     log_data = load_food_log()
     custom = log_data.get("custom_dishes", {})
@@ -2181,29 +2216,21 @@ async def handle_food_correct(query, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def handle_food_save_custom(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback: save confirmed food as a custom/frequent dish."""
-    entry = context.user_data.pop("last_confirmed_food", None)
+    """Callback: ask user for custom dish name, then save."""
+    entry = context.user_data.get("last_confirmed_food")
     if not entry:
         await query.answer("Данные потеряны.")
         return
 
-    log_data = load_food_log()
-    if "custom_dishes" not in log_data:
-        log_data["custom_dishes"] = {}
-
-    name = entry["name"]
-    log_data["custom_dishes"][name] = {
-        "kcal": entry["kcal"],
-        "protein": entry["protein"],
-        "fat": entry["fat"],
-        "carbs": entry["carbs"],
-        "fiber": entry["fiber"],
-    }
-    save_food_log(log_data)
-
-    # Remove the keyboard, keep text
+    context.user_data["food_naming"] = True
+    context.user_data["food_naming_expire"] = datetime.now(TZ) + timedelta(minutes=5)
+    suggested = entry.get("name", "?")
     original = query.message.text or ""
-    await query.edit_message_text(f"{original}\n\n⭐ «{name}» сохранено как частое блюдо")
+    await query.edit_message_text(
+        f"{original}\n\nПод каким именем сохранить? (например: «печенье bombbar»)\n"
+        f"Или просто Enter/отправь «{suggested}» если ок.\n"
+        f"«отмена» — не сохранять."
+    )
 
 
 async def handle_food_skip_custom(query, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2226,6 +2253,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Обработка текстовых сообщений."""
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
+
+    # ── Food naming mode (save custom dish with chosen name) ──
+    if context.user_data.get("food_naming"):
+        expire = context.user_data.get("food_naming_expire")
+        if expire and datetime.now(TZ) > expire:
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            context.user_data.pop("last_confirmed_food", None)
+        elif user_message and user_message.lower().strip() == "отмена":
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            context.user_data.pop("last_confirmed_food", None)
+            await update.message.reply_text("Не сохраняю.")
+            return
+        elif user_message:
+            context.user_data.pop("food_naming", None)
+            context.user_data.pop("food_naming_expire", None)
+            entry = context.user_data.pop("last_confirmed_food", None)
+            if entry:
+                custom_name = user_message.strip()
+                log_data = load_food_log()
+                if "custom_dishes" not in log_data:
+                    log_data["custom_dishes"] = {}
+                log_data["custom_dishes"][custom_name] = {
+                    "kcal": entry["kcal"],
+                    "protein": entry["protein"],
+                    "fat": entry["fat"],
+                    "carbs": entry["carbs"],
+                    "fiber": entry["fiber"],
+                }
+                save_food_log(log_data)
+                await update.message.reply_text(f"⭐ «{custom_name}» сохранено как частое блюдо")
+            else:
+                await update.message.reply_text("Данные потеряны.")
+            return
 
     # ── Food correction mode (before all other routing) ──
     if context.user_data.get("food_correcting"):
