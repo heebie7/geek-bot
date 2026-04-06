@@ -621,6 +621,8 @@ def find_raw_files(year):
             files.setdefault("paypal_files", []).append(f)
         elif name.startswith("credo_sms") and name.endswith(".csv"):
             files["credo_sms"] = f
+        elif name.startswith("wolt") and name.endswith(".csv"):
+            files["wolt"] = f
 
     # Если несколько zen файлов — берём последний по дате в имени (zen_YYYY-MM-DD_*) или по mtime
     if zen_candidates:
@@ -981,16 +983,32 @@ def main():
 
     # Парсим каждый источник
     # Порядок важен для дедупликации:
-    # 1. Credo SMS — точные данные по грузинским картам
-    # 2. Zen Money — RUB операции (точные), GEL операции (неточные, дедуплицируются)
-    # 3. PayPal — точные данные
+    # 1. Wolt CSV — точные данные по вендорам (кафе vs продукты)
+    # 2. Credo SMS — точные данные по грузинским картам (минус Wolt-дубли)
+    # 3. Zen Money — RUB операции (точные), GEL операции (неточные, дедуплицируются)
+    # 4. PayPal — точные данные
     all_rows = []
     has_credo_sms = False
+    has_wolt = False
+
+    if "wolt" in raw_files:
+        wolt_rows = parse_wolt(raw_files["wolt"], categories, period)
+        has_wolt = len(wolt_rows) > 0
+        print(f"Wolt: {len(wolt_rows)} транзакций")
+        all_rows.extend(wolt_rows)
 
     if "credo_sms" in raw_files:
         credo_rows = parse_credo_sms(
             raw_files["credo_sms"], categories, period,
         )
+        # Если есть Wolt CSV — убираем ВСЕ Wolt-платежи из Credo SMS.
+        # wolt-cli покрывает полный период, а даты могут расходиться (UTC vs UTC+4).
+        if has_wolt:
+            before = len(credo_rows)
+            credo_rows = [r for r in credo_rows if r["description"] != "Wolt"]
+            wolt_deduped = before - len(credo_rows)
+            if wolt_deduped > 0:
+                print(f"  Credo SMS: пропущено {wolt_deduped} Wolt-операций (есть Wolt CSV)")
         has_credo_sms = len(credo_rows) > 0
         print(f"Credo SMS: {len(credo_rows)} транзакций")
         all_rows.extend(credo_rows)
