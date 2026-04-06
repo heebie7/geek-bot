@@ -118,6 +118,7 @@ BOOK_DIGEST_PROMPT = """Ты — research assistant. Сделай краткий
 Книга:
 {content}"""
 QUOTES_TOPIC_ID = 54  # "Цитаты" topic thread_id
+TRANSLATE_TOPIC_ID = 681  # "Перевод" topic thread_id
 
 # ── Owner ──────────────────────────────────────────────────────────────
 

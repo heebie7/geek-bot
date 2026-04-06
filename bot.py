@@ -78,6 +78,7 @@ from handlers import (
     handle_food_save_custom, handle_food_skip_custom,
     handle_food_topic_text, handle_food_topic_photo,
     food_evening_summary,
+    handle_translate_text, handle_translate_photo,
 )
 from meal_data import generate_weekly_menu
 from whoop import whoop_client
@@ -1291,9 +1292,10 @@ def main() -> None:
     # Обработка CSV файлов
     application.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))
 
-    # Обработка группы From Geek: топик Еда (текст и фото) + топик Цитаты
-    # Food topic handlers check thread_id internally and return early if not food topic.
-    # group_quote handler runs in group=1 so it processes non-food messages.
+    # Обработка группы From Geek: топики Еда (текст и фото), Цитаты, Перевод
+    # Each topic handler checks thread_id internally and returns early if wrong topic.
+    # PTB runs one handler per group, so each topic needs its own group.
+    # group=0: food, group=1: quotes, group=2: translate
     application.add_handler(MessageHandler(
         filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
         handle_food_topic_text,
@@ -1306,6 +1308,16 @@ def main() -> None:
         filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
         handle_group_quote,
     ), group=1)
+
+    # Обработка группы From Geek: топик Перевод (RU↔EN)
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
+        handle_translate_text,
+    ), group=2)
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.PHOTO,
+        handle_translate_photo,
+    ), group=2)
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
