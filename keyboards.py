@@ -267,3 +267,13 @@ def food_is_food_keyboard(entry_id: str = "0") -> InlineKeyboardMarkup:
             InlineKeyboardButton("Нет", callback_data=f"food_no_{entry_id}"),
         ]
     ])
+
+
+def food_save_custom_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard: offer to save as frequent/custom dish."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⭐ Сохранить как частое", callback_data="food_savecustom"),
+            InlineKeyboardButton("Нет", callback_data="food_skipcustom"),
+        ]
+    ])

@@ -69,6 +69,20 @@ def recognize_food(photo_bytes: Optional[bytes], caption: Optional[str]) -> dict
         return {"confidence": 0.0}
 
 
+def match_custom_dish(name: str, custom_dishes: dict) -> Optional[dict]:
+    """Match against user's personal frequent dishes.
+
+    Returns dish dict with KBJU, or None.
+    """
+    if not name or not custom_dishes:
+        return None
+    norm_name = name.lower().strip()
+    for dish_name, dish_data in custom_dishes.items():
+        if dish_name.lower() == norm_name or norm_name in dish_name.lower() or dish_name.lower() in norm_name:
+            return {"name": dish_name, **dish_data}
+    return None
+
+
 def match_kitchen_dish(name: str, dishes: list) -> Optional[dict]:
     """Fuzzy match recognized dish name against kitchen DB.
 
@@ -118,12 +132,34 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
     return entry
 
 
+def build_custom_entry(dish: dict) -> dict:
+    """Build a food log entry from a custom/frequent dish. No Gemini call."""
+    now = datetime.now(TZ)
+    return {
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M"),
+        "meal": get_meal_type(now.hour),
+        "name": dish.get("name", "?"),
+        "matched_dish": dish.get("name"),
+        "kcal": dish.get("kcal", 0),
+        "protein": dish.get("protein", 0),
+        "fat": dish.get("fat", 0),
+        "carbs": dish.get("carbs", 0),
+        "fiber": dish.get("fiber", 0),
+        "portion": "standard",
+        "source": "custom",
+        "caption": None,
+    }
+
+
 def format_food_result(entry: dict) -> str:
     """Format a food entry for display in Telegram."""
     source_label = {
         "kitchen_match": "kitchen DB",
+        "custom": "частое блюдо",
         "vision": "Gemini Vision",
         "vision+caption": "Gemini Vision + подпись",
+        "text": "текст",
     }
     lines = [
         f"🍽 {entry['name']}",

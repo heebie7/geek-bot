@@ -75,7 +75,8 @@ from handlers import (
     handle_channel_quote, quote_command, handle_group_quote,
     income_command, process_command, handle_csv_upload,
     handle_food_confirm, handle_food_cancel, handle_food_correct,
-    food_evening_summary,
+    handle_food_save_custom, handle_food_skip_custom,
+    ate_command, food_evening_summary,
 )
 from meal_data import generate_weekly_menu
 from whoop import whoop_client
@@ -1099,6 +1100,10 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
             await query.edit_message_text(text, reply_markup=_food_kb())
         else:
             await query.edit_message_text("Данные потеряны. Отправь фото ещё раз.")
+    elif data == "food_savecustom":
+        await handle_food_save_custom(query, context)
+    elif data == "food_skipcustom":
+        await handle_food_skip_custom(query, context)
 
 
 # ── Bot commands menu ────────────────────────────────────────────────
@@ -1200,6 +1205,7 @@ def main() -> None:
     application.add_handler(CommandHandler("whoop_off", stop_whoop_command))
     application.add_handler(CommandHandler("myid", myid_command))
     application.add_handler(CommandHandler("q", quote_command))
+    application.add_handler(CommandHandler("ate", ate_command))
     application.add_handler(CommandHandler("income", income_command))
     application.add_handler(CommandHandler("process", process_command))
 

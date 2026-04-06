@@ -61,7 +61,8 @@ from finance import handle_csv_upload, income_command, process_command  # noqa: 
 from whoop import whoop_client
 from meal_data import generate_weekly_menu
 from food import (
-    recognize_food, match_kitchen_dish, build_food_entry,
+    recognize_food, match_custom_dish, match_kitchen_dish,
+    build_food_entry, build_custom_entry,
     format_food_result, format_daily_summary,
 )
 
@@ -2042,6 +2043,56 @@ async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 
+async def ate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/ate <food> — log food by text. Checks custom dishes first, then Gemini."""
+    text = " ".join(context.args) if context.args else ""
+    if not text:
+        await update.message.reply_text("Что ела? Напиши: /ate латте")
+        return
+
+    # Check custom dishes first (instant, no Gemini)
+    log_data = load_food_log()
+    custom = log_data.get("custom_dishes", {})
+    custom_match = match_custom_dish(text, custom)
+
+    if custom_match:
+        entry = build_custom_entry(custom_match)
+        context.user_data["pending_food"] = entry
+        result_text = format_food_result(entry)
+        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+        return
+
+    # Check kitchen DB
+    dishes = load_kitchen_dishes()
+    kitchen_match = match_kitchen_dish(text, dishes)
+    if kitchen_match:
+        recognition = {"name": kitchen_match.get("name", text), "confidence": 0.8}
+        entry = build_food_entry(recognition, kitchen_match, text)
+        context.user_data["pending_food"] = entry
+        result_text = format_food_result(entry)
+        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+        return
+
+    # Fall back to Gemini text-only recognition
+    await update.message.chat.send_action("typing")
+    recognition = recognize_food(None, text)
+    confidence = recognition.get("confidence", 0.0)
+
+    if confidence < 0.3:
+        await update.message.reply_text("Не распознал. Попробуй точнее, например: /ate омлет с сыром")
+        return
+
+    entry = build_food_entry(recognition, None, text)
+    entry["source"] = "text"
+    context.user_data["pending_food"] = entry
+    result_text = format_food_result(entry)
+
+    if confidence < 0.6:
+        await update.message.reply_text(f"Это еда?\n\n{result_text}", reply_markup=food_is_food_keyboard())
+    else:
+        await update.message.reply_text(result_text, reply_markup=food_confirm_keyboard())
+
+
 async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback: user confirmed food entry."""
     entry = context.user_data.pop("pending_food", None)
@@ -2055,7 +2106,18 @@ async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None
 
     summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), entry["date"])
     original = query.message.text or ""
-    await query.edit_message_text(f"{original}\n\n✅ Записано\n\n{summary}")
+
+    # Offer to save as custom dish if not already from custom/kitchen
+    if entry.get("source") not in ("custom", "kitchen_match"):
+        from keyboards import food_save_custom_keyboard
+        context.user_data["last_confirmed_food"] = entry
+        await query.edit_message_text(
+            f"{original}\n\n✅ Записано\n\n{summary}",
+            reply_markup=food_save_custom_keyboard(),
+        )
+    else:
+        await query.edit_message_text(f"{original}\n\n✅ Записано\n\n{summary}")
+    return
 
 
 async def handle_food_cancel(query, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2069,6 +2131,39 @@ async def handle_food_correct(query, context: ContextTypes.DEFAULT_TYPE) -> None
     context.user_data["food_correcting"] = True
     context.user_data["food_correct_expire"] = datetime.now(TZ) + timedelta(minutes=5)
     await query.edit_message_text("Напиши что это было (например: 'гречка с курицей').\nИли 'отмена' для отмены.")
+
+
+async def handle_food_save_custom(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: save confirmed food as a custom/frequent dish."""
+    entry = context.user_data.pop("last_confirmed_food", None)
+    if not entry:
+        await query.answer("Данные потеряны.")
+        return
+
+    log_data = load_food_log()
+    if "custom_dishes" not in log_data:
+        log_data["custom_dishes"] = {}
+
+    name = entry["name"]
+    log_data["custom_dishes"][name] = {
+        "kcal": entry["kcal"],
+        "protein": entry["protein"],
+        "fat": entry["fat"],
+        "carbs": entry["carbs"],
+        "fiber": entry["fiber"],
+    }
+    save_food_log(log_data)
+
+    # Remove the keyboard, keep text
+    original = query.message.text or ""
+    await query.edit_message_text(f"{original}\n\n⭐ «{name}» сохранено как частое блюдо")
+
+
+async def handle_food_skip_custom(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: decline saving as custom dish."""
+    context.user_data.pop("last_confirmed_food", None)
+    original = query.message.text or ""
+    await query.edit_message_text(original)
 
 
 async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
