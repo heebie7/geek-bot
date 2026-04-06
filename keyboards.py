@@ -249,13 +249,16 @@ def get_joy_items_keyboard(category: str) -> InlineKeyboardMarkup:
 # ── Food tracking keyboards ──────────────────────────────────────────
 
 def food_confirm_keyboard(entry_id: str = "0") -> InlineKeyboardMarkup:
-    """Keyboard for confirming recognized food: OK / Cancel / Correct."""
+    """Keyboard for confirming recognized food: OK / Cancel / Correct / Weight."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Ок", callback_data=f"food_ok_{entry_id}"),
-            InlineKeyboardButton("❌ Не то", callback_data=f"food_no_{entry_id}"),
-            InlineKeyboardButton("✏️ Поправить", callback_data=f"food_fix_{entry_id}"),
-        ]
+            InlineKeyboardButton("❌ Не то", callback_data=f"food_fix_{entry_id}"),
+        ],
+        [
+            InlineKeyboardButton("⚖️ Вес", callback_data=f"food_wt_{entry_id}"),
+            InlineKeyboardButton("Отмена", callback_data=f"food_no_{entry_id}"),
+        ],
     ])
 
 

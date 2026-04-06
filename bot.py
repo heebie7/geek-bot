@@ -74,7 +74,7 @@ from handlers import (
     handle_photo_note, handle_message, handle_remind_callback,
     handle_channel_quote, quote_command, handle_group_quote,
     income_command, process_command, handle_csv_upload,
-    handle_food_confirm, handle_food_cancel, handle_food_correct,
+    handle_food_confirm, handle_food_cancel, handle_food_correct, handle_food_weight,
     handle_food_save_custom, handle_food_skip_custom,
     handle_food_topic_text, handle_food_topic_photo,
     food_evening_summary,
@@ -1091,6 +1091,8 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         await handle_food_cancel(query, context)
     elif data.startswith("food_fix_"):
         await handle_food_correct(query, context)
+    elif data.startswith("food_wt_"):
+        await handle_food_weight(query, context)
     elif data.startswith("food_yes_"):
         # Mid-confidence confirmed as food → show full confirm keyboard
         from food import format_food_result

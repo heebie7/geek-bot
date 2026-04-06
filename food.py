@@ -52,7 +52,7 @@ def recognize_food(photo_bytes: Optional[bytes], caption: Optional[str]) -> dict
         raw = re.sub(r'\s*```$', '', raw)
         result = json.loads(raw)
         # Ensure required fields
-        for field in ("name", "kcal", "protein", "fat", "carbs", "fiber", "confidence"):
+        for field in ("name", "weight_g", "kcal", "protein", "fat", "carbs", "fiber", "confidence"):
             if field not in result:
                 if field == "confidence":
                     result["confidence"] = 0.5
@@ -110,6 +110,7 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
         "meal": get_meal_type(now.hour),
         "name": recognition.get("name", "Неизвестное блюдо"),
         "matched_dish": None,
+        "weight_g": recognition.get("weight_g", 0),
         "kcal": recognition.get("kcal", 0),
         "protein": recognition.get("protein", 0),
         "fat": recognition.get("fat", 0),
@@ -152,6 +153,16 @@ def build_custom_entry(dish: dict) -> dict:
     }
 
 
+def _rescale_entry(entry: dict, new_weight: int) -> None:
+    """Rescale KBJU in-place proportionally to new weight."""
+    old_weight = entry.get("weight_g", 0)
+    if old_weight and old_weight != new_weight:
+        ratio = new_weight / old_weight
+        for field in ("kcal", "protein", "fat", "carbs", "fiber"):
+            entry[field] = round(entry.get(field, 0) * ratio)
+    entry["weight_g"] = new_weight
+
+
 def format_food_result(entry: dict) -> str:
     """Format a food entry for display in Telegram."""
     source_label = {
@@ -161,8 +172,10 @@ def format_food_result(entry: dict) -> str:
         "vision+caption": "Gemini Vision + подпись",
         "text": "текст",
     }
+    weight = entry.get('weight_g', 0)
+    weight_str = f" (~{weight}г)" if weight else ""
     lines = [
-        f"🍽 {entry['name']}",
+        f"🍽 {entry['name']}{weight_str}",
         f"Б: {entry['protein']}г | Ж: {entry['fat']}г | У: {entry['carbs']}г | Клетч: {entry['fiber']}г | {entry['kcal']} kcal",
         f"Источник: {source_label.get(entry['source'], entry['source'])}",
     ]

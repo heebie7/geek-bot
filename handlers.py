@@ -2055,6 +2055,40 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
     if not text:
         return
 
+    # ── Food weight correction mode ──
+    if context.user_data.get("food_weight_correcting"):
+        expire = context.user_data.get("food_weight_expire")
+        if expire and datetime.now(TZ) > expire:
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+        elif text.lower() == "отмена":
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+            entry = context.user_data.get("pending_food")
+            if entry:
+                result_text = format_food_result(entry)
+                await msg.reply_text(result_text, reply_markup=food_confirm_keyboard())
+            else:
+                await msg.reply_text("Отменено.")
+            return
+        else:
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+            try:
+                new_weight = int(text.replace("г", "").replace("g", ""))
+            except ValueError:
+                await msg.reply_text("Не понял. Напиши число в граммах.")
+                return
+            entry = context.user_data.get("pending_food")
+            if entry:
+                from food import _rescale_entry
+                _rescale_entry(entry, new_weight)
+                result_text = format_food_result(entry)
+                await msg.reply_text(result_text, reply_markup=food_confirm_keyboard())
+            else:
+                await msg.reply_text("Данные потеряны.")
+            return
+
     # ── Food naming mode (save custom dish with chosen name) ──
     if context.user_data.get("food_naming"):
         expire = context.user_data.get("food_naming_expire")
@@ -2215,6 +2249,19 @@ async def handle_food_correct(query, context: ContextTypes.DEFAULT_TYPE) -> None
     await query.edit_message_text("Напиши что это было (например: 'гречка с курицей').\nИли 'отмена' для отмены.")
 
 
+async def handle_food_weight(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: user wants to correct weight. Recalculates KBJU proportionally."""
+    entry = context.user_data.get("pending_food")
+    if not entry:
+        await query.answer("Данные потеряны.")
+        return
+    old_weight = entry.get("weight_g", 0)
+    hint = f" (сейчас: {old_weight}г)" if old_weight else ""
+    context.user_data["food_weight_correcting"] = True
+    context.user_data["food_weight_expire"] = datetime.now(TZ) + timedelta(minutes=5)
+    await query.edit_message_text(f"Сколько грамм?{hint}\nИли 'отмена'.")
+
+
 async def handle_food_save_custom(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback: ask user for custom dish name, then save."""
     entry = context.user_data.get("last_confirmed_food")
@@ -2253,6 +2300,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Обработка текстовых сообщений."""
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
+
+    # ── Food weight correction mode ──
+    if context.user_data.get("food_weight_correcting"):
+        expire = context.user_data.get("food_weight_expire")
+        if expire and datetime.now(TZ) > expire:
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+        elif user_message and user_message.lower().strip() == "отмена":
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+            entry = context.user_data.get("pending_food")
+            if entry:
+                text = format_food_result(entry)
+                await update.message.reply_text(text, reply_markup=food_confirm_keyboard())
+            else:
+                await update.message.reply_text("Отменено.")
+            return
+        elif user_message:
+            context.user_data.pop("food_weight_correcting", None)
+            context.user_data.pop("food_weight_expire", None)
+            try:
+                new_weight = int(user_message.strip().replace("г", "").replace("g", ""))
+            except ValueError:
+                await update.message.reply_text("Не понял. Напиши число в граммах.")
+                return
+            entry = context.user_data.get("pending_food")
+            if entry:
+                from food import _rescale_entry
+                _rescale_entry(entry, new_weight)
+                text = format_food_result(entry)
+                await update.message.reply_text(text, reply_markup=food_confirm_keyboard())
+            else:
+                await update.message.reply_text("Данные потеряны.")
+            return
 
     # ── Food naming mode (save custom dish with chosen name) ──
     if context.user_data.get("food_naming"):

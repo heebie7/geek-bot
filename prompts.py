@@ -417,6 +417,7 @@ FOOD_RECOGNITION_PROMPT = """Analyze this food photo. Return JSON only, no other
 
 {{
   "name": "dish name in Russian",
+  "weight_g": estimated_weight_in_grams_int,
   "kcal": estimated_calories_int,
   "protein": grams_int,
   "fat": grams_int,
@@ -426,11 +427,11 @@ FOOD_RECOGNITION_PROMPT = """Analyze this food photo. Return JSON only, no other
   "confidence": 0.0-1.0
 }}
 
-If the photo shows a nutrition label or packaging with KBJU/nutrition facts table — READ the values from the label, do not estimate. Set confidence to 0.9+ for label reads.
+Estimate weight_g from visual cues: plate size, depth of food, density, comparison to utensils/hands if visible. All KBJU values must correspond to this estimated weight, not to a standard 100g serving.
+If the photo shows a nutrition label or packaging with KBJU/nutrition facts table — READ the values from the label, do not estimate. Set confidence to 0.9+ for label reads. For weight_g, use the package weight if visible.
 If the photo shows prepared food — estimate based on visual assessment.
 If caption is provided, use it as a hint for dish identification.
-If multiple dishes visible, list the main one. Estimate for a single standard serving unless photo suggests otherwise.
-If portion looks small or large, adjust KBJU estimates proportionally (not just label).
+If multiple dishes visible, list the main one.
 Caption: {caption}"""
 
 FOOD_TEXT_ONLY_PROMPT = """Estimate nutrition for the described food. Return JSON only, no other text.
