@@ -2553,6 +2553,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         return
 
+    # ── "Сегодня" shortcut: message starting with "сегодня" → add tasks to Сегодня ──
+    if user_message and user_message.lower().startswith("сегодня"):
+        # Strip "сегодня" prefix and any following punctuation
+        rest = re.sub(r'^сегодня[\s:,\-—]*', '', user_message, flags=re.IGNORECASE).strip()
+        if rest:
+            # Split into tasks: by newlines first, then by commas if single line
+            lines = [l.strip() for l in rest.split("\n") if l.strip()]
+            if len(lines) == 1 and "," in lines[0]:
+                lines = [t.strip() for t in lines[0].split(",") if t.strip()]
+            # Clean up bullet prefixes
+            tasks = []
+            for line in lines:
+                task = line.lstrip("-*•").strip()
+                if task and task[0].isdigit():
+                    task = task.lstrip("0123456789").lstrip(".)").strip()
+                if task:
+                    tasks.append(task)
+            if tasks:
+                added = 0
+                for task in tasks:
+                    if add_task_to_zone(task, "сегодня"):
+                        added += 1
+                if added == 1:
+                    await update.message.reply_text(f"Добавлено в Сегодня: {tasks[0]}")
+                else:
+                    task_list = "\n".join(f"• {t}" for t in tasks[:added])
+                    await update.message.reply_text(f"Добавлено {added} задач в Сегодня:\n{task_list}")
+                return
+
     # ── Reply-based routing: if replying to Indra's message → Indra responds ──
     reply_msg = update.message.reply_to_message
     if reply_msg:
