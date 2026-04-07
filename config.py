@@ -87,8 +87,8 @@ KITCHEN_REPO = "heebie7/family-kitchen"
 KITCHEN_DATA_FILE = "data.json"
 DEFAULT_FOOD_TARGETS = {
     "kcal": 1800,
-    "protein": 80,
-    "fiber": 25,
+    "protein": 110,
+    "fiber": 28,
     "fat": 70,
     "carbs": 200,
 }
