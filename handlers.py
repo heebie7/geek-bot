@@ -2711,9 +2711,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text messages in the Translate topic — auto-translate RU↔EN."""
+    """Handle text messages in the Translate topic — auto-translate RU↔EN or formulate."""
     from config import TRANSLATE_TOPIC_ID, READING_GROUP_ID
-    from translate import translate_text
+    from translate import translate_text, formulate_text
 
     msg = update.message
     if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != TRANSLATE_TOPIC_ID:
@@ -2723,6 +2723,38 @@ async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TY
     if not text:
         return
 
+    # ── "Formulate in English" mode: waiting for style choice ──
+    if context.user_data.get("formulate_style_pending"):
+        # User already chose style via callback, this shouldn't happen
+        # But if they type instead of clicking — treat as new message
+        context.user_data.pop("formulate_style_pending", None)
+
+    # ── Trigger: "помоги сформулировать" ──
+    formulate_triggers = ("помоги сформулировать", "сформулируй", "помоги написать на английском")
+    text_lower = text.lower()
+    if any(trigger in text_lower for trigger in formulate_triggers):
+        # Extract the actual content after the trigger phrase
+        content = text
+        for trigger in formulate_triggers:
+            idx = text_lower.find(trigger)
+            if idx != -1:
+                content = text[idx + len(trigger):].strip().lstrip(":")
+                break
+        if not content:
+            await msg.reply_text("Что сформулировать? Напиши текст после команды.")
+            return
+
+        context.user_data["formulate_text"] = content
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("tumblr", callback_data="trstyle:tumblr"),
+                InlineKeyboardButton("переписка", callback_data="trstyle:dm"),
+            ]
+        ])
+        await msg.reply_text("Стиль?", reply_markup=kb)
+        return
+
+    # ── Default: auto-translate ──
     await msg.chat.send_action("typing")
     result = translate_text(text)
     if result:

@@ -299,6 +299,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.answer("Ошибка обработки")
         return
 
+    # ── Translate: formulation style choice ──
+    elif data.startswith("trstyle:"):
+        style = data[8:]  # "tumblr" or "dm"
+        formulate_text_content = context.user_data.pop("formulate_text", None)
+        if not formulate_text_content:
+            await query.edit_message_text("Текст потерян. Напиши ещё раз.")
+            return
+        await query.edit_message_text(f"Стиль: {style}...")
+        from translate import formulate_text
+        result = formulate_text(formulate_text_content, style)
+        if result:
+            await query.edit_message_text(result)
+        else:
+            await query.edit_message_text("Не удалось сформулировать.")
+        return
+
     # ── Mode switching ──
     elif data == "mode_geek":
         context.user_data["mode"] = "geek"

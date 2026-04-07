@@ -24,6 +24,29 @@ Rules:
 Text:
 {text}"""
 
+FORMULATE_PROMPT = """The user wants to express this idea in English.
+Style: {style}
+
+{style_description}
+
+Rules:
+- Return ONLY the English text, no explanations
+- Keep the core meaning and emotional tone
+- Make it sound natural for a native speaker in that context
+- If the input is already partially in English, refine it
+
+Text to formulate:
+{text}"""
+
+STYLE_DESCRIPTIONS = {
+    "tumblr": "Tumblr post style: casual, expressive, can use lowercase, sentence fragments, "
+              "emotional emphasis via italics or caps. Fandom-literate, neurodivergent-friendly tone. "
+              "Can be analytical or personal. Tags-style commentary is OK.",
+    "dm": "Direct message / correspondence style: conversational but clear, warm, slightly informal. "
+          "Like writing to a colleague you respect but are friendly with. "
+          "No slang overload, no overly formal constructions.",
+}
+
 OCR_TRANSLATE_PROMPT = """This is a screenshot containing text.
 1. Extract all readable text from the image.
 2. Determine the language: if Russian — translate to English; if English — translate to Russian.
@@ -49,6 +72,30 @@ def translate_text(text: str) -> Optional[str]:
         return response.text.strip()
     except Exception as e:
         logger.error(f"Translation error: {e}")
+        return None
+
+
+def formulate_text(text: str, style: str) -> Optional[str]:
+    """Formulate text in English with given style (tumblr/dm) via Gemini."""
+    if not gemini_client:
+        logger.error("No Gemini client for formulation")
+        return None
+
+    style_desc = STYLE_DESCRIPTIONS.get(style, STYLE_DESCRIPTIONS["dm"])
+    prompt = FORMULATE_PROMPT.format(
+        style=style,
+        style_description=style_desc,
+        text=text,
+    )
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Formulation error: {e}")
         return None
 
 
