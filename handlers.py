@@ -1438,10 +1438,11 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
                 motivation_text = await get_llm_response(
                     motivation_prompt,
                     mode="geek",
-                    max_tokens=200,
+                    max_tokens=400,
                     skip_context=True,
                     custom_system=geek_motivation_system,
                     use_pro=True,
+                    no_continue=True,
                 )
                 motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
                 if motivation_text:
@@ -1643,10 +1644,11 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
                 motivation_text = await get_llm_response(
                     motivation_prompt,
                     mode="geek",
-                    max_tokens=200,
+                    max_tokens=400,
                     skip_context=True,
                     custom_system=geek_motivation_system,
                     use_pro=True,
+                    no_continue=True,
                 )
                 motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
                 if motivation_text:
