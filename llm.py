@@ -266,12 +266,13 @@ def _is_health_topic(message: str) -> bool:
     return any(kw in lower for kw in _HEALTH_KEYWORDS)
 
 
-async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False, custom_system: str = None, use_pro: bool = False) -> str:
+async def get_llm_response(user_message: str, mode: str = "geek", history: list = None, max_tokens: int = 800, skip_context: bool = False, custom_system: str = None, use_pro: bool = False, no_continue: bool = False) -> str:
     """Получить ответ от LLM. Gemini Flash primary, Gemini Pro для здоровья, OpenAI fallback.
 
     skip_context=True — не грузить tasks/whoop в system prompt (для команд где контекст уже в user_message).
     custom_system — полностью заменяет system prompt (для специализированных режимов вроде sensory).
     use_pro=True — использовать Gemini 2.5 Pro (для WHOOP/здоровья) вместо Flash.
+    no_continue=True — не запускать автопродолжение при truncation (для коротких ответов вроде Макса).
     """
     current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
 
@@ -322,8 +323,8 @@ async def get_llm_response(user_message: str, mode: str = "geek", history: list 
                 finish = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
                 logger.info(f"Gemini response OK ({model}), finish_reason={finish}, len={len(response.text)}")
 
-                # Auto-continue if response was truncated
-                if _is_truncated(response):
+                # Auto-continue if response was truncated (skip if no_continue=True)
+                if _is_truncated(response) and not no_continue:
                     logger.warning(f"Gemini response truncated (finish_reason={finish}), auto-continuing...")
                     full_text = _continue_generation(
                         gemini_client, model, system, gemini_contents,

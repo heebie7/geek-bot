@@ -2366,8 +2366,9 @@ async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
         maks_reply = await get_llm_response(
             user_message="Посмотри что у меня было за сегодня по еде. Короткий комментарий и один шаг на завтра.",
             custom_system=maks_system,
-            max_tokens=400,
+            max_tokens=600,
             skip_context=True,
+            no_continue=True,
         )
         await context.bot.send_message(chat_id=chat_id, text=base_text)
         await context.bot.send_message(chat_id=chat_id, text=f"*Макс:*\n{maks_reply}", parse_mode="Markdown")
