@@ -2304,12 +2304,38 @@ async def handle_food_skip_custom(query, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """22:00 daily job: send food summary for the day."""
+    """22:00 daily job: send food summary for the day + Maks commentary."""
     log_data = load_food_log()
     today = datetime.now(TZ).strftime("%Y-%m-%d")
     summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
     chat_id = context.job.chat_id or OWNER_CHAT_ID
-    await context.bot.send_message(chat_id=chat_id, text=f"🍽 Итоги дня по еде:\n\n{summary}")
+
+    # Base summary (numbers)
+    base_text = f"🍽 Итоги дня по еде:\n\n{summary}"
+
+    # If there is no food data today, send only the stub
+    if "Данных по еде за сегодня нет" in summary:
+        await context.bot.send_message(chat_id=chat_id, text=base_text)
+        return
+
+    # Ask Maks for a short evening commentary
+    try:
+        from prompts import MAKS_FOOD_EVENING_PROMPT
+        from llm import get_llm_response
+
+        maks_system = MAKS_FOOD_EVENING_PROMPT.format(food_data=summary)
+        maks_reply = await get_llm_response(
+            user_message="Посмотри что у меня было за сегодня по еде. Короткий комментарий и один шаг на завтра.",
+            custom_system=maks_system,
+            max_tokens=400,
+            skip_context=True,
+        )
+        full_text = f"{base_text}\n\n━━━\n\n**Макс:**\n{maks_reply}"
+    except Exception as e:
+        logger.error(f"Maks evening commentary failed: {e}")
+        full_text = base_text
+
+    await context.bot.send_message(chat_id=chat_id, text=full_text, parse_mode="Markdown")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

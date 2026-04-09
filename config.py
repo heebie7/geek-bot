@@ -86,11 +86,16 @@ FOOD_LOG_FILE = "life/health/food/food-log.json"
 KITCHEN_REPO = "heebie7/family-kitchen"
 KITCHEN_DATA_FILE = "data.json"
 DEFAULT_FOOD_TARGETS = {
+    # По консилиуму v4 (2026-04-09):
+    # - Белок 1.6-1.8 г/кг при весе 78.5 → 130 г (нижняя цель, на GLP-1 с ДСТ
+    #   и риском саркопении в перименопаузе — критично не занижать)
+    # - Клетчатка 25-35 г (стандарт Физикл 3.0)
+    # - Калории 1800 ккал (сохраняется, на Mounjaro достаточно)
     "kcal": 1800,
-    "protein": 110,
-    "fiber": 28,
+    "protein": 130,
+    "fiber": 30,
     "fat": 70,
-    "carbs": 200,
+    "carbs": 180,
 }
 FOOD_TOPIC_ID = 17  # "Еда" topic in From Geek group
 
