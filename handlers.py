@@ -2369,12 +2369,13 @@ async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
             max_tokens=400,
             skip_context=True,
         )
-        full_text = f"{base_text}\n\n━━━\n\n**Макс:**\n{maks_reply}"
+        await context.bot.send_message(chat_id=chat_id, text=base_text)
+        await context.bot.send_message(chat_id=chat_id, text=f"*Макс:*\n{maks_reply}", parse_mode="Markdown")
+        return
     except Exception as e:
         logger.error(f"Maks evening commentary failed: {e}")
-        full_text = base_text
 
-    await context.bot.send_message(chat_id=chat_id, text=full_text, parse_mode="Markdown")
+    await context.bot.send_message(chat_id=chat_id, text=base_text)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
