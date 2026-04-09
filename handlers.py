@@ -2859,6 +2859,19 @@ async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TY
         await msg.reply_text("Стиль?", reply_markup=kb)
         return
 
+    # ── URL: fetch article + translate + send as spoiler chunks ──
+    url_match = re.search(r'https?://\S+', text)
+    if url_match:
+        url = url_match.group(0).rstrip('.,)')
+        await msg.chat.send_action("typing")
+        from translate import fetch_and_translate_url
+        from html import escape
+        chunks = await fetch_and_translate_url(url)
+        for chunk in chunks:
+            safe = escape(chunk)
+            await msg.reply_text(f"<tg-spoiler>{safe}</tg-spoiler>", parse_mode="HTML")
+        return
+
     # ── Default: auto-translate ──
     await msg.chat.send_action("typing")
     result = translate_text(text)
