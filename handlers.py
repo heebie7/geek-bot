@@ -2860,16 +2860,31 @@ async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     # ── URL: fetch article + translate + send as spoiler chunks ──
-    url_match = re.search(r'https?://\S+', text)
-    if url_match:
-        url = url_match.group(0).rstrip('.,)')
+    # Use entities for reliable URL extraction (handles text_link and plain url)
+    url = None
+    if msg.entities:
+        for entity in msg.entities:
+            if entity.type == "url":
+                url = msg.text[entity.offset:entity.offset + entity.length]
+                break
+            elif entity.type == "text_link":
+                url = entity.url
+                break
+    if not url:
+        url_match = re.search(r'https?://\S+', text)
+        if url_match:
+            url = url_match.group(0).rstrip('.,)')
+    if url:
         await msg.chat.send_action("typing")
         from translate import fetch_and_translate_url
         from html import escape
         chunks = await fetch_and_translate_url(url)
         for chunk in chunks:
             safe = escape(chunk)
-            await msg.reply_text(f"<tg-spoiler>{safe}</tg-spoiler>", parse_mode="HTML")
+            try:
+                await msg.reply_text(f"<tg-spoiler>{safe}</tg-spoiler>", parse_mode="HTML")
+            except Exception:
+                await msg.reply_text(safe)
         return
 
     # ── Default: auto-translate ──
