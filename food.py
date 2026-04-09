@@ -52,7 +52,7 @@ def recognize_food(photo_bytes: Optional[bytes], caption: Optional[str]) -> dict
         raw = re.sub(r'\s*```$', '', raw)
         result = json.loads(raw)
         # Ensure required fields
-        for field in ("name", "weight_g", "kcal", "protein", "fat", "carbs", "fiber", "confidence"):
+        for field in ("name", "weight_g", "kcal", "protein", "fat", "carbs", "fiber", "calcium", "confidence"):
             if field not in result:
                 if field == "confidence":
                     result["confidence"] = 0.5
@@ -116,6 +116,7 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
         "fat": recognition.get("fat", 0),
         "carbs": recognition.get("carbs", 0),
         "fiber": recognition.get("fiber", 0),
+        "calcium": recognition.get("calcium", 0),
         "portion": recognition.get("portion", "standard"),
         "source": "vision",
         "caption": caption,
@@ -126,7 +127,7 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
         entry["protein"] = match.get("protein", entry["protein"])
         entry["fat"] = match.get("fat", entry["fat"])
         entry["carbs"] = match.get("carbs", entry["carbs"])
-        # fiber always from Gemini (kitchen DB doesn't track it)
+        # fiber and calcium always from Gemini (kitchen DB doesn't track them)
         entry["source"] = "kitchen_match"
     elif caption:
         entry["source"] = "vision+caption"
@@ -147,6 +148,7 @@ def build_custom_entry(dish: dict) -> dict:
         "fat": dish.get("fat", 0),
         "carbs": dish.get("carbs", 0),
         "fiber": dish.get("fiber", 0),
+        "calcium": dish.get("calcium", 0),
         "portion": "standard",
         "source": "custom",
         "caption": None,
@@ -158,7 +160,7 @@ def _rescale_entry(entry: dict, new_weight: int) -> None:
     old_weight = entry.get("weight_g", 0)
     if old_weight and old_weight != new_weight:
         ratio = new_weight / old_weight
-        for field in ("kcal", "protein", "fat", "carbs", "fiber"):
+        for field in ("kcal", "protein", "fat", "carbs", "fiber", "calcium"):
             entry[field] = round(entry.get(field, 0) * ratio)
     entry["weight_g"] = new_weight
 
@@ -174,9 +176,11 @@ def format_food_result(entry: dict) -> str:
     }
     weight = entry.get('weight_g', 0)
     weight_str = f" (~{weight}г)" if weight else ""
+    ca = entry.get('calcium', 0) or 0
+    ca_str = f" | Ca: {ca}мг" if ca > 0 else ""
     lines = [
         f"🍽 {entry['name']}{weight_str}",
-        f"Б: {entry['protein']}г | Ж: {entry['fat']}г | У: {entry['carbs']}г | Клетч: {entry['fiber']}г | {entry['kcal']} kcal",
+        f"Б: {entry['protein']}г | Ж: {entry['fat']}г | У: {entry['carbs']}г | Клетч: {entry['fiber']}г{ca_str} | {entry['kcal']} kcal",
         f"Источник: {source_label.get(entry['source'], entry['source'])}",
     ]
     return "\n".join(lines)
@@ -191,10 +195,12 @@ def format_daily_summary(log: list, targets: Optional[dict], date: str) -> str:
     if not today_entries:
         return "Данных по еде за сегодня нет."
 
-    totals = {"kcal": 0, "protein": 0, "fat": 0, "carbs": 0, "fiber": 0}
+    totals = {"kcal": 0, "protein": 0, "fat": 0, "carbs": 0, "fiber": 0, "calcium": 0}
     for e in today_entries:
         for k in totals:
-            totals[k] += e.get(k, 0)
+            totals[k] += e.get(k, 0) or 0
+
+    ca_target = targets.get("calcium", 1100)
 
     count = len(today_entries)
     summary = f"Приёмов пищи: {count}\n"
@@ -202,14 +208,22 @@ def format_daily_summary(log: list, targets: Optional[dict], date: str) -> str:
     summary += f"Ж: {totals['fat']}/{targets['fat']}г | "
     summary += f"У: {totals['carbs']}/{targets['carbs']}г | "
     summary += f"Клетч: {totals['fiber']}/{targets['fiber']}г | "
-    summary += f"{totals['kcal']}/{targets['kcal']} kcal"
+    summary += f"{totals['kcal']}/{targets['kcal']} kcal\n"
+    summary += f"Ca: {totals['calcium']}/{ca_target}мг"
 
     # Remaining
     remaining = []
-    for key, label in [("protein", "Б"), ("fiber", "Клетч"), ("kcal", "kcal")]:
-        diff = targets[key] - totals[key]
+    for key, label, unit in [
+        ("protein", "Б", "г"),
+        ("fiber", "Клетч", "г"),
+        ("calcium", "Ca", "мг"),
+        ("kcal", "kcal", ""),
+    ]:
+        target_val = targets.get(key)
+        if target_val is None:
+            continue
+        diff = target_val - totals.get(key, 0)
         if diff > 0:
-            unit = "г" if key != "kcal" else ""
             remaining.append(f"{label} {diff}{unit}")
 
     if remaining:
