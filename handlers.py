@@ -2882,7 +2882,7 @@ async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TY
         for chunk in chunks:
             safe = escape(chunk)
             try:
-                await msg.reply_text(f"<tg-spoiler>{safe}</tg-spoiler>", parse_mode="HTML")
+                await msg.reply_text(f"<blockquote expandable>{safe}</blockquote>", parse_mode="HTML")
             except Exception:
                 await msg.reply_text(safe)
         return
