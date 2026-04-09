@@ -10,7 +10,6 @@ from typing import Optional
 
 import requests as _requests
 from google.genai import types
-import google.generativeai as genai
 
 from config import gemini_client, GEMINI_MODEL, GEMINI_PRO_MODEL, logger
 
@@ -188,7 +187,7 @@ async def fetch_and_translate_url(url: str) -> list:
         response = gemini_client.models.generate_content(
             model=GEMINI_PRO_MODEL,
             contents=_ARTICLE_PROMPT.format(html=html),
-            config=genai.types.GenerateContentConfig(max_output_tokens=8000),
+            config=types.GenerateContentConfig(max_output_tokens=8000),
         )
         if not response.text:
             return ["Не удалось извлечь текст статьи."]
