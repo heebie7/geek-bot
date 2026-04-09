@@ -2303,6 +2303,45 @@ async def handle_food_skip_custom(query, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.edit_message_text(original)
 
 
+async def handle_food_quick_add(query, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
+    """Callback: instant log a custom dish from the Food quick keyboard.
+
+    data format: 'fq:<index>' where index is position in sorted custom_dishes.
+    """
+    try:
+        idx = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await query.answer("Некорректный ID блюда.")
+        return
+
+    log_data = load_food_log()
+    custom = log_data.get("custom_dishes", {})
+    names = sorted(custom.keys())
+    if idx < 0 or idx >= len(names):
+        await query.answer("Блюдо не найдено.")
+        return
+
+    dish_name = names[idx]
+    dish_data = custom[dish_name]
+    dish = {"name": dish_name, **dish_data}
+
+    # Build entry and commit immediately (no confirm step — quick add is the whole point)
+    entry = build_custom_entry(dish)
+    log_data["log"].append(entry)
+    save_food_log(log_data)
+
+    # Show short result + daily totals
+    ca = entry.get("calcium", 0) or 0
+    ca_str = f" | Ca: {ca}мг" if ca > 0 else ""
+    line = (
+        f"✅ {entry['name']}\n"
+        f"Б: {entry['protein']}г | Ж: {entry['fat']}г | У: {entry['carbs']}г | "
+        f"Клетч: {entry['fiber']}г{ca_str} | {entry['kcal']} kcal"
+    )
+    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), entry["date"])
+    await query.edit_message_text(f"{line}\n\n{summary}")
+
+
 async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
     """22:00 daily job: send food summary for the day + Maks commentary."""
     log_data = load_food_log()
@@ -2452,12 +2491,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user_message == "🔥 Dashboard":
         await dashboard_command(update, context)
         return
-    elif user_message == "🌉 Bridge":
+    elif user_message == "🍽 Food":
+        # Show quick-add keyboard with custom dishes
+        from keyboards import food_quick_keyboard
+        log_data = load_food_log()
+        custom = log_data.get("custom_dishes", {})
+        if not custom:
+            await update.message.reply_text(
+                "Частых блюд пока нет. Отправь фото или описание еды текстом — после подтверждения предложу сохранить."
+            )
+            return
         await update.message.reply_text(
-            "Переключаю на мостик.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🌉 Мостик", url="https://t.me/Geek_bridge_bot")
-            ]])
+            f"Частые блюда ({len(custom)}). Клик — записать приём.",
+            reply_markup=food_quick_keyboard(custom),
         )
         return
     elif user_message == "⚡ Шаги":

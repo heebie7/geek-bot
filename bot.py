@@ -1124,6 +1124,11 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         await handle_food_save_custom(query, context)
     elif data == "food_skipcustom":
         await handle_food_skip_custom(query, context)
+    elif data == "fq_cancel":
+        await query.edit_message_text("Отменено. Отправь фото или описание еды, когда будешь готова.")
+    elif data.startswith("fq:"):
+        from handlers import handle_food_quick_add
+        await handle_food_quick_add(query, context, data)
 
 
 # ── Bot commands menu ────────────────────────────────────────────────

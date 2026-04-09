@@ -107,7 +107,7 @@ def get_main_keyboard(mode: str = "geek"):
 def get_reply_keyboard():
     """Постоянная клавиатура внизу чата."""
     keyboard = [
-        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🌉 Bridge"), KeyboardButton("⚡ Шаги")],
+        [KeyboardButton("🔥 Dashboard"), KeyboardButton("🍽 Food"), KeyboardButton("⚡ Шаги")],
         [KeyboardButton("🧘 Sensory"), KeyboardButton("✨ Joy"), KeyboardButton("➕ Add")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -280,3 +280,30 @@ def food_save_custom_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("Нет", callback_data="food_skipcustom"),
         ]
     ])
+
+
+def food_quick_keyboard(custom_dishes: dict) -> InlineKeyboardMarkup:
+    """Quick-add keyboard: shows custom dishes as buttons, 2 per row.
+
+    callback_data format: fq:<index> (index refers to order in list, to stay under 64-byte limit)
+    """
+    # Stable ordering: alphabetical by name
+    names = sorted(custom_dishes.keys())
+
+    buttons = []
+    row = []
+    for idx, name in enumerate(names):
+        # Telegram button text limit ~30 chars for comfort
+        label = name if len(name) <= 28 else name[:27] + "…"
+        row.append(InlineKeyboardButton(label, callback_data=f"fq:{idx}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton("📷 Фото/текст", callback_data="fq_cancel"),
+        InlineKeyboardButton("Отмена", callback_data="fq_cancel"),
+    ])
+    return InlineKeyboardMarkup(buttons)
