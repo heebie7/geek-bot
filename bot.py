@@ -77,7 +77,7 @@ from handlers import (
     handle_food_confirm, handle_food_cancel, handle_food_correct, handle_food_weight,
     handle_food_save_custom, handle_food_skip_custom,
     handle_food_topic_text, handle_food_topic_photo,
-    food_evening_summary,
+    food_evening_summary, morning_inspiration,
     handle_translate_text, handle_translate_photo,
 )
 from meal_data import generate_weekly_menu
@@ -1301,6 +1301,14 @@ def main() -> None:
         time=time(hour=22, minute=0, tzinfo=TZ),
         chat_id=OWNER_CHAT_ID,
         name=f"food_evening_{OWNER_CHAT_ID}",
+    )
+    # Утреннее вдохновение от трёх голосов (Indra + Maks + Ksenia) — 12:30
+    # После whoop_morning_recovery (12:00), чтобы WHOOP-данные были свежими
+    job_queue.run_daily(
+        morning_inspiration,
+        time=time(hour=12, minute=30, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"morning_inspiration_{OWNER_CHAT_ID}",
     )
     logger.info(f"WHOOP, Monday review, task deadline, and food jobs scheduled for owner {OWNER_CHAT_ID}")
 

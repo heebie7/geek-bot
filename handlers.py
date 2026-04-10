@@ -26,6 +26,8 @@ from prompts import (
     SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
     INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT, GEEK_MOTIVATION_PROMPT,
     CAPTAIN_PROMPT, CAPTAIN_REPLY_PROMPT,
+    MORNING_SHARED_CONTEXT, INDRA_MORNING_INSPIRATION,
+    MAKS_MORNING_INSPIRATION, KSENIA_MORNING_INSPIRATION,
 )
 from storage import (
     load_file, get_writing_file, save_writing_file,
@@ -2303,6 +2305,154 @@ async def handle_food_skip_custom(query, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop("last_confirmed_food", None)
     original = query.message.text or ""
     await query.edit_message_text(original)
+
+
+async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Утреннее вдохновение: три голоса (Indra + Maks + Ksenia) с учётом WHOOP + календаря.
+
+    Запускается по расписанию утром. Шлёт 3 коротких сообщения после основного WHOOP.
+    Каждая персона даёт 2-5 предложений: тёплое, практическое, по своей территории.
+    """
+    job = context.job
+    chat_id = job.chat_id or OWNER_CHAT_ID
+
+    if is_muted(chat_id):
+        return
+
+    try:
+        # 1. WHOOP today's snapshot (short — we don't need the whole morning detail)
+        whoop_lines = []
+        try:
+            rec = whoop_client.get_recovery_today()
+            sleep = whoop_client.get_sleep_today()
+            if rec:
+                score = rec.get("score", {})
+                rs = score.get("recovery_score")
+                rhr = score.get("resting_heart_rate")
+                hrv = score.get("hrv_rmssd_milli")
+                if rs is not None:
+                    color = "green" if rs >= 67 else ("yellow" if rs >= 34 else "red")
+                    whoop_lines.append(f"Recovery: {rs}% ({color})")
+                if rhr:
+                    whoop_lines.append(f"RHR: {rhr} bpm")
+                if hrv:
+                    whoop_lines.append(f"HRV: {round(hrv, 1)} ms")
+            if sleep:
+                stage = sleep.get("score", {}).get("stage_summary", {})
+                rem = stage.get("total_rem_sleep_time_milli", 0)
+                deep = stage.get("total_slow_wave_sleep_time_milli", 0)
+                light = stage.get("total_light_sleep_time_milli", 0)
+                actual_h = round((rem + deep + light) / 3_600_000, 1)
+                if actual_h:
+                    whoop_lines.append(f"Сон: {actual_h}h (deep {round(deep/60_000)} min)")
+        except Exception as e:
+            logger.warning(f"morning_inspiration: WHOOP fetch failed: {e}")
+        whoop_data = "\n".join(whoop_lines) if whoop_lines else "Нет данных"
+
+        # 2. Calendar: сегодня + следующие 7 дней
+        calendar_text = "Нет данных"
+        week_load = "Нет данных"
+        try:
+            week_events = get_week_events()
+            calendar_text = week_events  # Already formatted with СЕГОДНЯ/ЗАВТРА markers
+
+            # Extract just today's portion for calendar_today (up to first double newline after СЕГОДНЯ)
+            if "СЕГОДНЯ" in week_events:
+                today_idx = week_events.index("СЕГОДНЯ")
+                # Find next date header or end
+                rest = week_events[today_idx:]
+                lines = rest.split("\n")
+                today_lines = []
+                for i, line in enumerate(lines):
+                    if i == 0:
+                        today_lines.append(line)
+                    elif line.startswith("  "):  # indented event
+                        today_lines.append(line)
+                    elif line.strip() == "":
+                        continue
+                    else:
+                        break  # next day's header
+                calendar_text = "\n".join(today_lines) if today_lines else "Без событий"
+
+            # Count total events for the week load hint
+            lines_all = week_events.split("\n")
+            event_lines = [l for l in lines_all if l.startswith("  ")]
+            weeks_count = len(event_lines)
+            week_load = f"Всего событий на ближайшие 7 дней: {weeks_count}"
+        except Exception as e:
+            logger.warning(f"morning_inspiration: calendar fetch failed: {e}")
+
+        # 3. Build shared context
+        shared_context = MORNING_SHARED_CONTEXT.format(
+            whoop_data=whoop_data,
+            calendar_today=calendar_text,
+            week_load=week_load,
+        )
+
+        # 4. Ask Indra — warm parasympathetic frame
+        try:
+            indra_system = INDRA_MORNING_INSPIRATION.format(shared_context=shared_context)
+            indra_reply = await get_llm_response(
+                user_message="Утреннее вдохновение через ПНЭИ-линзу. Коротко, тепло, предлагая.",
+                custom_system=indra_system,
+                max_tokens=400,
+                skip_context=True,
+                use_pro=True,
+                no_continue=True,
+            )
+            indra_reply = re.sub(r'\[SAVE:[^\]]+\]', '', indra_reply or '').strip()
+            if indra_reply:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"*Indra:*\n{indra_reply}",
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.error(f"morning_inspiration: Indra failed: {e}")
+
+        # 5. Ask Maks — practical food/body anchor
+        try:
+            maks_system = MAKS_MORNING_INSPIRATION.format(shared_context=shared_context)
+            maks_reply = await get_llm_response(
+                user_message="Утренний практический якорь по еде/телу. Коротко.",
+                custom_system=maks_system,
+                max_tokens=350,
+                skip_context=True,
+                no_continue=True,
+            )
+            maks_reply = (maks_reply or '').strip()
+            if maks_reply:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"*Макс:*\n{maks_reply}",
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.error(f"morning_inspiration: Maks failed: {e}")
+
+        # 6. Ask Ksenia — body / movement / DST
+        try:
+            ksenia_system = KSENIA_MORNING_INSPIRATION.format(shared_context=shared_context)
+            ksenia_reply = await get_llm_response(
+                user_message="Утренний телесный якорь с учётом ДСТ. Коротко.",
+                custom_system=ksenia_system,
+                max_tokens=350,
+                skip_context=True,
+                no_continue=True,
+            )
+            ksenia_reply = (ksenia_reply or '').strip()
+            if ksenia_reply:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"*Ксения:*\n{ksenia_reply}",
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.error(f"morning_inspiration: Ksenia failed: {e}")
+
+        logger.info(f"Sent morning inspiration (Indra+Maks+Ksenia) to {chat_id}")
+    except Exception as e:
+        logger.error(f"morning_inspiration top-level failed: {e}")
 
 
 async def handle_food_quick_add(query, context: ContextTypes.DEFAULT_TYPE, data: str) -> None:
