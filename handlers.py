@@ -1999,6 +1999,67 @@ async def handle_channel_quote(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error("Channel quote: failed to save")
 
 
+# ── Voice message handler ────────────────────────────────────────────────────
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Transcribe voice message via Gemini and process as text."""
+    from google.genai import types
+    from config import gemini_client, GEMINI_MODEL
+
+    voice = update.message.voice
+    if not voice:
+        return
+
+    if not gemini_client:
+        await update.message.reply_text("Gemini недоступен, не могу распознать голосовое.")
+        return
+
+    await update.message.chat.send_action("typing")
+
+    # Download .ogg voice file
+    file = await voice.get_file()
+    audio_bytes = await file.download_as_bytearray()
+
+    # Transcribe via Gemini
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[types.Content(parts=[
+                types.Part.from_bytes(data=bytes(audio_bytes), mime_type="audio/ogg"),
+                types.Part(text="Транскрибируй это голосовое сообщение. Верни только текст, без комментариев."),
+            ])],
+        )
+        transcript = response.text.strip() if response.text else None
+    except Exception as e:
+        logger.error(f"Voice transcription error: {e}")
+        await update.message.reply_text("Не удалось распознать голосовое.")
+        return
+
+    if not transcript:
+        await update.message.reply_text("Не удалось распознать голосовое.")
+        return
+
+    logger.info(f"Voice transcribed ({voice.duration}s): {transcript[:100]}")
+
+    # Note mode — save transcript as note
+    if context.user_data.get("note_mode"):
+        buffer = context.user_data.get("note_buffer", [])
+        buffer.append(f"[голосовое]: {transcript}")
+        context.user_data["note_buffer"] = buffer
+        try:
+            from telegram import ReactionTypeEmoji
+            await update.message.set_reaction([ReactionTypeEmoji(emoji="👍")])
+        except Exception:
+            pass
+        return
+
+    # Otherwise — process as regular text message
+    # Inject transcript into message object and delegate to handle_message
+    update.message.text = transcript
+    await handle_message(update, context)
+
+
 # ── Photo and message handlers ───────────────────────────────────────────────
 
 

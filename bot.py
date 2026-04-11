@@ -71,7 +71,7 @@ from handlers import (
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
     whoop_weekly_summary, monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
-    handle_photo_note, handle_message, handle_remind_callback,
+    handle_voice, handle_photo_note, handle_message, handle_remind_callback,
     handle_channel_quote, quote_command, handle_group_quote,
     income_command, process_command, handle_csv_upload,
     handle_food_confirm, handle_food_cancel, handle_food_correct, handle_food_weight,
@@ -1314,6 +1314,9 @@ def main() -> None:
 
     # Обработка кнопок
     application.add_handler(CallbackQueryHandler(button_callback))
+
+    # Обработка голосовых сообщений (транскрипция → обработка как текст)
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
     # Обработка фото (для режима заметки)
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo_note))
