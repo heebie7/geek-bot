@@ -2433,7 +2433,7 @@ async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
             maks_reply = await get_llm_response(
                 user_message="Утренний практический якорь по еде/телу. Коротко.",
                 custom_system=maks_system,
-                max_tokens=350,
+                max_tokens=500,
                 skip_context=True,
                 no_continue=True,
             )
@@ -2453,7 +2453,7 @@ async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
             ksenia_reply = await get_llm_response(
                 user_message="Утренний телесный якорь с учётом ДСТ. Коротко.",
                 custom_system=ksenia_system,
-                max_tokens=350,
+                max_tokens=500,
                 skip_context=True,
                 no_continue=True,
             )
