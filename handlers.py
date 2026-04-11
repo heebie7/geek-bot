@@ -20,7 +20,7 @@ from config import (
     USER_CONTEXT_FILE, TASKS_FILE,
     ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI,
-    REMINDERS, SLEEP_PROMPTS, FAMILY_ALIASES,
+    REMINDERS, FAMILY_ALIASES,
 )
 from prompts import (
     SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
@@ -222,66 +222,6 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             text.replace("*", ""),
             reply_markup=keyboard
         )
-
-
-async def todo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /todo — обзор задач через Лею + случайная идея из кайфа."""
-    priority_tasks = _get_priority_tasks()
-    calendar = get_week_events()
-    current_time = datetime.now(TZ).strftime("%Y-%m-%d %H:%M, %A")
-    whoop = _get_whoop_context()
-
-    # Get Joy stats for context
-    joy_stats = get_joy_stats_week()
-    joy_total = sum(joy_stats.values())
-    sensory_count = joy_stats.get("sensory", 0)
-
-    joy_context = ""
-    if joy_total < 3:
-        joy_context = "\n⚠️ Joy за неделю: меньше 3 отметок. Сенсорная диета страдает."
-    if sensory_count == 0:
-        joy_context += "\n⚠️ Sensory = 0 за неделю."
-
-    today_tasks = get_today_tasks()
-    today_section = ""
-    if today_tasks:
-        today_section = "\n## Сегодня:\n" + "\n".join(f"- {t}" for t in today_tasks) + "\n"
-
-    prompt = f"""Сделай краткий обзор на сегодня и ближайшую неделю.
-{today_section}
-## Задачи с приоритетами:
-{priority_tasks}
-
-## Календарь на неделю:
-{calendar}
-
-## Состояние тела (WHOOP):
-{whoop}
-
-Сегодня: {current_time}
-
-Выдели:
-1. Что в календаре сегодня и завтра
-2. {"Задачи на сегодня (секция Сегодня) — первыми" if today_tasks else "Срочные задачи (⏫) — сделать первыми"}
-3. Состояние тела: recovery, сон — и что это значит для нагрузки сегодня
-4. Обычные задачи (🔼) — если есть ресурс
-5. Общая оценка: насколько загружена неделя
-
-Если recovery красный или сон плохой — рекомендуй меньше задач и восстановление.
-Будь краткой, но заботливой."""
-
-    response = await get_llm_response(prompt, mode="geek", max_tokens=1500, skip_context=True)
-
-    # Add Joy warning if needed
-    if joy_context:
-        response += joy_context
-
-    # Add random sensory suggestion
-    sensory_suggestion = _get_random_sensory_suggestion()
-    if sensory_suggestion:
-        response += f"\n\n💡 Идея на сегодня: {sensory_suggestion}"
-
-    await update.message.reply_text(response)
 
 
 async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

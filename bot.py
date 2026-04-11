@@ -10,7 +10,7 @@ set_bot_commands, main.
 
 import re
 import random
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -27,13 +27,13 @@ from telegram.ext import (
 
 from config import (
     TELEGRAM_TOKEN, ALLOWED_USER_IDS, TZ, logger, OWNER_CHAT_ID,
-    TASKS_FILE, ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
+    ZONE_EMOJI, PROJECT_EMOJI, ALL_DESTINATIONS,
     JOY_CATEGORIES, JOY_CATEGORY_EMOJI, REMINDERS,
     READING_GROUP_ID, READING_TOPIC_ID, READING_STATE_FILE,
     BOOK_TRIAGE_STATE_FILE,
 )
 from prompts import SENSORY_INDRA_PROMPT, SENSORY_BAD_PROMPT, WHOOP_HEALTH_SYSTEM
-from storage import load_file, get_week_events, is_muted, load_morning_cache
+from storage import get_week_events, load_morning_cache
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
     suggest_zone_for_task, create_rawnote,
@@ -52,7 +52,6 @@ from keyboards import (
     get_note_mode_keyboard,
     get_joy_keyboard, get_joy_items_keyboard,
     get_task_confirm_keyboard, get_destination_keyboard,
-    get_priority_keyboard,
     get_sensory_bad_keyboard, BINGO_ITEMS,
 )
 from handlers import (
@@ -81,7 +80,6 @@ from handlers import (
     handle_translate_text, handle_translate_photo,
 )
 from meal_data import generate_weekly_menu
-from whoop import whoop_client
 
 
 # ── Access control middleware ────────────────────────────────────────
