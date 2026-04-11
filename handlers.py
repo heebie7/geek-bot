@@ -142,13 +142,14 @@ async def captain_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Команда /dashboard — быстрый обзор: что горит + на этой неделе, с кнопками Done."""
+    """Команда /dashboard — быстрый обзор: Сегодня + горит + на этой неделе, с кнопками Done."""
     tasks_content = get_life_tasks()
     now = datetime.now(TZ)
     end_of_week = now + timedelta(days=(6 - now.weekday()))  # Воскресенье
     end_date = end_of_week.strftime("%Y-%m-%d")
 
     lines = tasks_content.split("\n")
+    today_tasks = get_today_tasks()
     high_priority = []
     due_this_week = []
 
@@ -158,8 +159,11 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             continue
         task_text = stripped[6:]
 
+        # Skip tasks already in today_tasks (avoid duplicates)
+        if task_text.strip() in [t.strip() for t in today_tasks]:
+            continue
+
         has_high = "⏫" in task_text or "🔺" in task_text
-        has_medium = "🔼" in task_text
         due_match = re.search(r'📅\s*(\d{4}-\d{2}-\d{2})', task_text)
 
         if has_high and not due_match:
@@ -171,8 +175,8 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             elif has_high:
                 high_priority.append(task_text)
 
-    # Собираем все задачи для кнопок
-    all_tasks = high_priority + due_this_week
+    # Собираем все задачи для кнопок (Сегодня первыми)
+    all_tasks = today_tasks + high_priority + due_this_week
     if not all_tasks:
         await update.message.reply_text("Ничего срочного. Можно дышать.")
         return
@@ -185,28 +189,40 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Формируем сообщение с нумерацией
     msg_lines = []
     buttons = []
+    counter = 1
+
+    if today_tasks:
+        msg_lines.append("📅 *Сегодня:*")
+        for t in today_tasks:
+            display = t.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
+            msg_lines.append(f"{counter}. {display}")
+            buttons.append([InlineKeyboardButton(
+                f"✅ {counter}. {display[:30]}{'...' if len(display) > 30 else ''}",
+                callback_data=f"done_{_task_hash(t)}"
+            )])
+            counter += 1
 
     if high_priority:
-        msg_lines.append("🔥 *Горит:*")
-        for i, t in enumerate(high_priority, 1):
-            # Убираем эмодзи приоритетов для читаемости в сообщении
+        msg_lines.append("\n🔥 *Горит:*")
+        for t in high_priority:
             display = t.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
-            msg_lines.append(f"{i}. {display}")
+            msg_lines.append(f"{counter}. {display}")
             buttons.append([InlineKeyboardButton(
-                f"✅ {i}. {display[:30]}{'...' if len(display) > 30 else ''}",
+                f"✅ {counter}. {display[:30]}{'...' if len(display) > 30 else ''}",
                 callback_data=f"done_{_task_hash(t)}"
             )])
+            counter += 1
 
     if due_this_week:
-        offset = len(high_priority)
         msg_lines.append("\n📅 *На этой неделе:*")
-        for i, t in enumerate(due_this_week, offset + 1):
+        for t in due_this_week:
             display = t.replace("⏫", "").replace("🔺", "").replace("🔼", "").strip()
-            msg_lines.append(f"{i}. {display}")
+            msg_lines.append(f"{counter}. {display}")
             buttons.append([InlineKeyboardButton(
-                f"✅ {i}. {display[:30]}{'...' if len(display) > 30 else ''}",
+                f"✅ {counter}. {display[:30]}{'...' if len(display) > 30 else ''}",
                 callback_data=f"done_{_task_hash(t)}"
             )])
+            counter += 1
 
     keyboard = InlineKeyboardMarkup(buttons)
     text = "\n".join(msg_lines)
