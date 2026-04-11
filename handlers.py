@@ -2412,7 +2412,7 @@ async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
             indra_reply = await get_llm_response(
                 user_message="Утреннее вдохновение через ПНЭИ-линзу. Коротко, тепло, предлагая.",
                 custom_system=indra_system,
-                max_tokens=400,
+                max_tokens=500,
                 skip_context=True,
                 use_pro=True,
                 no_continue=True,
@@ -2435,6 +2435,7 @@ async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
                 custom_system=maks_system,
                 max_tokens=500,
                 skip_context=True,
+                use_pro=True,
                 no_continue=True,
             )
             maks_reply = (maks_reply or '').strip()
@@ -2455,6 +2456,7 @@ async def morning_inspiration(context: ContextTypes.DEFAULT_TYPE) -> None:
                 custom_system=ksenia_system,
                 max_tokens=500,
                 skip_context=True,
+                use_pro=True,
                 no_continue=True,
             )
             ksenia_reply = (ksenia_reply or '').strip()
