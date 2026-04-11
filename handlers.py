@@ -24,7 +24,7 @@ from config import (
 )
 from prompts import (
     SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
-    INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT, GEEK_MOTIVATION_PROMPT,
+    INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT,
     CAPTAIN_PROMPT, CAPTAIN_REPLY_PROMPT,
     MORNING_SHARED_CONTEXT, INDRA_MORNING_INSPIRATION,
     MAKS_MORNING_INSPIRATION, KSENIA_MORNING_INSPIRATION,
@@ -1107,99 +1107,6 @@ def get_morning_whoop_data() -> dict:
     }
 
 
-def _should_send_movement_motivation() -> bool:
-    """Check if Geek should send movement motivation.
-
-    Triggers when:
-    - 2+ consecutive days without workouts, OR
-    - 3 consecutive days with strain < 5
-    """
-    try:
-        week_workouts = whoop_client.get_workouts_week()
-        week_cycles = whoop_client.get_cycles_week()
-
-        if not week_cycles:
-            return False
-
-        # Check last 3 days of strain
-        recent_cycles = sorted(
-            week_cycles, key=lambda c: c.get("start", ""), reverse=True
-        )[:3]
-        if len(recent_cycles) >= 3:
-            low_strain_days = sum(
-                1 for c in recent_cycles
-                if c.get("score", {}).get("strain", 0) < 5
-            )
-            if low_strain_days >= 3:
-                return True
-
-        # Check consecutive days without workouts
-        if not week_workouts:
-            return True
-
-        workout_dates = set()
-        for wo in week_workouts:
-            start = wo.get("start", "")
-            if start:
-                workout_dates.add(start[:10])
-
-        if not workout_dates:
-            return True
-
-        today = datetime.now(TZ).date()
-        latest_workout = max(
-            datetime.strptime(d, "%Y-%m-%d").date() for d in workout_dates
-        )
-        days_since = (today - latest_workout).days
-        return days_since >= 2
-
-    except Exception as e:
-        logger.error(f"Movement motivation check failed: {e}")
-        return False
-
-
-def _get_inactivity_info() -> str:
-    """Get human-readable inactivity description for motivation prompt."""
-    try:
-        week_workouts = whoop_client.get_workouts_week()
-        week_cycles = whoop_client.get_cycles_week()
-
-        parts = []
-
-        if not week_workouts:
-            parts.append("Тренировок за неделю: 0")
-        else:
-            workout_dates = set()
-            for wo in week_workouts:
-                start = wo.get("start", "")
-                if start:
-                    workout_dates.add(start[:10])
-            if workout_dates:
-                today = datetime.now(TZ).date()
-                latest = max(
-                    datetime.strptime(d, "%Y-%m-%d").date()
-                    for d in workout_dates
-                )
-                days_since = (today - latest).days
-                parts.append(f"Последняя тренировка: {days_since} дней назад")
-
-        if week_cycles:
-            recent = sorted(
-                week_cycles, key=lambda c: c.get("start", ""), reverse=True
-            )[:3]
-            strains = [
-                round(c.get("score", {}).get("strain", 0), 1)
-                for c in recent
-            ]
-            parts.append(
-                f"Strain последние 3 дня: {', '.join(str(s) for s in strains)}"
-            )
-
-        return ". ".join(parts) if parts else "Нет данных об активности"
-    except Exception:
-        return "Нет данных об активности"
-
-
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send morning recovery notification with feeling buttons."""
     job = context.job
@@ -1384,31 +1291,6 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as e:
             logger.error(f"Indra daily PNEI failed: {e}")
 
-        # ── Сообщение 3 (условное): Geek мотивация движения ──
-        try:
-            if _should_send_movement_motivation():
-                motivations = get_motivations_for_mode("normal", 0, 0, recovery_score)
-                geek_motivation_system = GEEK_MOTIVATION_PROMPT.format(
-                    motivation_context=motivations,
-                )
-                days_info = _get_inactivity_info()
-                motivation_prompt = f"Recovery: {recovery_score}%. {days_info}. Пни."
-                motivation_text = await get_llm_response(
-                    motivation_prompt,
-                    mode="geek",
-                    max_tokens=400,
-                    skip_context=True,
-                    custom_system=geek_motivation_system,
-                    use_pro=True,
-                    no_continue=True,
-                )
-                motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
-                if motivation_text:
-                    await context.bot.send_message(chat_id=chat_id, text=motivation_text)
-                    logger.info(f"Sent Geek movement motivation to {chat_id}")
-        except Exception as e:
-            logger.error(f"Geek movement motivation failed: {e}")
-
         log_whoop_data()
         logger.info(f"Sent WHOOP morning data + feeling buttons to {chat_id}")
     except Exception as e:
@@ -1582,38 +1464,6 @@ async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
                 logger.info(f"Sent Indra weekly PNEI to {chat_id}, msg_id={sent.message_id}")
         except Exception as e:
             logger.error(f"Indra weekly PNEI failed: {e}")
-
-        # ── Сообщение 3 (условное): Geek мотивация движения ──
-        try:
-            if _should_send_movement_motivation():
-                avg_recovery = 0
-                if week_records:
-                    scores = [r.get("score", {}).get("recovery_score") for r in week_records
-                              if r.get("score", {}).get("recovery_score") is not None]
-                    avg_recovery = round(sum(scores) / len(scores)) if scores else 0
-                weekly_mode = "recovery" if avg_recovery < 34 else ("moderate" if avg_recovery < 67 else "normal")
-                motivations = get_motivations_for_mode(weekly_mode, 0, 0, avg_recovery)
-
-                geek_motivation_system = GEEK_MOTIVATION_PROMPT.format(
-                    motivation_context=motivations,
-                )
-                days_info = _get_inactivity_info()
-                motivation_prompt = f"Недельный контекст. Recovery avg: {avg_recovery}%. {days_info}. Пни."
-                motivation_text = await get_llm_response(
-                    motivation_prompt,
-                    mode="geek",
-                    max_tokens=400,
-                    skip_context=True,
-                    custom_system=geek_motivation_system,
-                    use_pro=True,
-                    no_continue=True,
-                )
-                motivation_text = re.sub(r'\[SAVE:[^\]]+\]', '', motivation_text).strip()
-                if motivation_text:
-                    await context.bot.send_message(chat_id=chat_id, text=motivation_text)
-                    logger.info(f"Sent Geek weekly movement motivation to {chat_id}")
-        except Exception as e:
-            logger.error(f"Geek weekly movement motivation failed: {e}")
 
         log_whoop_data()
         logger.info(f"Sent WHOOP weekly summary to {chat_id}")
