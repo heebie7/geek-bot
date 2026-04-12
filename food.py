@@ -131,6 +131,28 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
         entry["source"] = "kitchen_match"
     elif caption:
         entry["source"] = "vision+caption"
+
+    # FatSecret lookup: supplement KBJU if weight is known and FS keys are configured
+    weight_g = entry.get("weight_g", 0)
+    if weight_g and weight_g > 0 and entry["source"] not in ("kitchen_match",):
+        try:
+            from fatsecret import lookup as fs_lookup
+            fs = fs_lookup(entry["name"], weight_g)
+            if fs:
+                entry["kcal"] = fs["kcal"]
+                entry["protein"] = fs["protein"]
+                entry["fat"] = fs["fat"]
+                entry["carbs"] = fs["carbs"]
+                # Keep Gemini fiber/calcium if FS returns 0 (often missing)
+                if fs["fiber"] > 0:
+                    entry["fiber"] = fs["fiber"]
+                if fs["calcium"] > 0:
+                    entry["calcium"] = fs["calcium"]
+                entry["source"] = entry["source"].replace("vision", "fatsecret")
+                entry["fs_name"] = fs["fs_name"]
+        except Exception as e:
+            logger.debug(f"FatSecret lookup skipped: {e}")
+
     return entry
 
 
@@ -172,6 +194,8 @@ def format_food_result(entry: dict) -> str:
         "custom": "частое блюдо",
         "vision": "Gemini Vision",
         "vision+caption": "Gemini Vision + подпись",
+        "fatsecret": "FatSecret",
+        "fatsecret+caption": "FatSecret + подпись",
         "text": "текст",
     }
     weight = entry.get('weight_g', 0)
