@@ -1942,6 +1942,46 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
     if not text:
         return
 
+    # ── Reply-based weight correction (post-confirmation) ──
+    # Detect: reply to bot food message + weight hint like "400г", "по 25г", "уточни: 400г"
+    if msg.reply_to_message:
+        replied = msg.reply_to_message
+        is_food_msg = replied.text and replied.text.startswith("🍽")
+        if is_food_msg:
+            entry = context.user_data.get("last_confirmed_food")
+            if entry:
+                import re as _re
+                # Parse "по Xг" (per-piece × count from entry name)
+                per_piece = _re.search(r"по\s+(\d+)\s*г", text.lower())
+                total = _re.search(r"(?:уточни[:\s]+)?(\d+)\s*г", text.lower())
+                new_weight = None
+                if per_piece:
+                    piece_g = int(per_piece.group(1))
+                    # Try to extract count from entry name (e.g. "16 роллов")
+                    count_m = _re.search(r"(\d+)", entry.get("name", ""))
+                    count = int(count_m.group(1)) if count_m else 1
+                    new_weight = piece_g * count
+                elif total:
+                    new_weight = int(total.group(1))
+                if new_weight and new_weight > 0:
+                    from food import _rescale_entry
+                    # Update last log entry for this dish
+                    log_data = load_food_log()
+                    today = datetime.now(TZ).strftime("%Y-%m-%d")
+                    # Find last matching entry in today's log
+                    for i in range(len(log_data["log"]) - 1, -1, -1):
+                        e = log_data["log"][i]
+                        if e.get("date") == today and e.get("name") == entry.get("name"):
+                            _rescale_entry(e, new_weight)
+                            save_food_log(log_data)
+                            context.user_data["last_confirmed_food"] = e
+                            result_text = format_food_result(e)
+                            summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
+                            await msg.reply_text(f"{result_text}\n\n✅ Пересчитано\n\n{summary}")
+                            return
+                    await msg.reply_text("Не нашёл запись в логе за сегодня.")
+                    return
+
     # ── Food weight correction mode ──
     if context.user_data.get("food_weight_correcting"):
         expire = context.user_data.get("food_weight_expire")
