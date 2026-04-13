@@ -51,7 +51,7 @@ FLOATRATES_API = "http://www.floatrates.com/daily/rub.json"
 CACHE_MAX_AGE_HOURS = 24
 
 # Запасные курсы если API недоступен
-FALLBACK_RATES = {"GEL": 28.5, "USD": 76.7, "EUR": 90.4, "GBP": 104.1, "RUB": 1.0}
+FALLBACK_RATES = {"GEL": 28.5, "USD": 76.7, "EUR": 90.4, "GBP": 104.1, "AMD": 0.20, "RUB": 1.0}
 
 # Загруженные курсы (заполняется в main)
 LOADED_RATES = None
@@ -68,6 +68,7 @@ def fetch_floatrates():
             "USD": round(data.get("usd", {}).get("inverseRate", FALLBACK_RATES["USD"]), 2),
             "EUR": round(data.get("eur", {}).get("inverseRate", FALLBACK_RATES["EUR"]), 2),
             "GBP": round(data.get("gbp", {}).get("inverseRate", FALLBACK_RATES["GBP"]), 2),
+            "AMD": round(data.get("amd", {}).get("inverseRate", FALLBACK_RATES["AMD"]), 4),
             "RUB": 1.0,
         }
         return rates
@@ -120,9 +121,14 @@ def load_categories(json_str=None):
         return json.load(f)
 
 
+_WARNED_CURRENCIES = set()
+
 def get_rate(currency, date_str):
     """Получить курс валюты к RUB на дату."""
     rates = LOADED_RATES if LOADED_RATES else FALLBACK_RATES
+    if currency not in rates and currency not in _WARNED_CURRENCIES:
+        print(f"  ! Неизвестная валюта: {currency} (дата {date_str}), курс = 1.0")
+        _WARNED_CURRENCIES.add(currency)
     return rates.get(currency, 1.0)
 
 
