@@ -68,7 +68,7 @@ from handlers import (
     myid_command,
     check_reminders,
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
-    whoop_weekly_summary, monday_review, get_morning_whoop_data,
+    monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_voice, handle_photo_note, handle_message, handle_remind_callback,
     handle_channel_quote, quote_command, handle_group_quote,
@@ -1256,15 +1256,8 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"whoop_evening_{OWNER_CHAT_ID}",
     )
-    job_queue.run_daily(
-        whoop_weekly_summary,
-        time=time(hour=11, minute=0, tzinfo=TZ),
-        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
-        chat_id=OWNER_CHAT_ID,
-        name=f"whoop_weekly_{OWNER_CHAT_ID}",
-    )
-    # Sleep reminders removed — handled by Claude Code hooks instead
-    # Monday review at 10:00 (before WHOOP weekly at 11:00)
+    # Weekly summary moved to Claude Code scheduled task `health-weekly` (Sun 12:15)
+    # Monday review at 10:00
     job_queue.run_daily(
         monday_review,
         time=time(hour=10, minute=0, tzinfo=TZ),

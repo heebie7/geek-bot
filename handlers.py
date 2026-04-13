@@ -24,7 +24,7 @@ from config import (
 )
 from prompts import (
     SENSORY_INDRA_PROMPT, WHOOP_HEALTH_SYSTEM,
-    INDRA_WHOOP_DAILY_PROMPT, INDRA_WHOOP_WEEKLY_PROMPT,
+    INDRA_WHOOP_DAILY_PROMPT,
     CAPTAIN_PROMPT, CAPTAIN_REPLY_PROMPT,
     MORNING_SHARED_CONTEXT, INDRA_MORNING_INSPIRATION,
     MAKS_MORNING_INSPIRATION, KSENIA_MORNING_INSPIRATION,
@@ -35,7 +35,7 @@ from storage import (
     add_reminder, get_due_reminders, parse_remind_time,
     get_reminders, is_muted, save_morning_cache,
     load_whoop_patterns, load_whoop_baselines,
-    load_latest_indra_session, load_indra_sessions_week,
+    load_latest_indra_session,
     load_food_log, save_food_log, load_kitchen_dishes,
 )
 from tasks import (
@@ -1297,179 +1297,6 @@ async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"WHOOP morning notification failed: {e}")
 
 
-async def whoop_weekly_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send weekly WHOOP summary in ART voice."""
-    job = context.job
-    chat_id = job.chat_id
-
-    if is_muted(chat_id):
-        return
-
-    try:
-        # Gather weekly data
-        week_records = whoop_client.get_recovery_week()
-        week_cycles = whoop_client.get_cycles_week()
-        week_sleep = whoop_client.get_sleep_week()
-        week_workouts = whoop_client.get_workouts_week()
-
-        data_parts = []
-
-        # Recovery / HRV / RHR
-        if week_records:
-            scores = [r.get("score", {}).get("recovery_score") for r in week_records if r.get("score", {}).get("recovery_score") is not None]
-            hrvs = [r.get("score", {}).get("hrv_rmssd_milli") for r in week_records if r.get("score", {}).get("hrv_rmssd_milli") is not None]
-            rhrs = [r.get("score", {}).get("resting_heart_rate") for r in week_records if r.get("score", {}).get("resting_heart_rate") is not None]
-            if scores:
-                avg = round(sum(scores) / len(scores))
-                green = sum(1 for s in scores if s >= 67)
-                yellow = sum(1 for s in scores if 34 <= s < 67)
-                red = sum(1 for s in scores if s < 34)
-                data_parts.append(f"Recovery avg: {avg}% (green {green}, yellow {yellow}, red {red})")
-            if hrvs:
-                data_parts.append(f"HRV avg: {round(sum(hrvs)/len(hrvs), 1)} ms")
-            if rhrs:
-                data_parts.append(f"RHR avg: {round(sum(rhrs)/len(rhrs))} bpm")
-
-        # Sleep
-        if week_sleep:
-            sleep_hours = []
-            sleep_perfs = []
-            sleep_effs = []
-            sleep_consistencies = []
-            resp_rates = []
-            disturbances_list = []
-            awake_mins = []
-            rem_mins = []
-            deep_mins = []
-            for sl in week_sleep:
-                ss = sl.get("score", {})
-                stage = ss.get("stage_summary", {})
-                rem = stage.get("total_rem_sleep_time_milli", 0)
-                deep = stage.get("total_slow_wave_sleep_time_milli", 0)
-                light = stage.get("total_light_sleep_time_milli", 0)
-                actual_h = round((rem + deep + light) / 3_600_000, 1)
-                if actual_h > 0:
-                    sleep_hours.append(actual_h)
-                if rem:
-                    rem_mins.append(round(rem / 60_000))
-                if deep:
-                    deep_mins.append(round(deep / 60_000))
-                perf = ss.get("sleep_performance_percentage")
-                if perf is not None:
-                    sleep_perfs.append(perf)
-                eff = ss.get("sleep_efficiency_percentage")
-                if eff is not None:
-                    sleep_effs.append(eff)
-                cons = ss.get("sleep_consistency_percentage")
-                if cons is not None:
-                    sleep_consistencies.append(cons)
-                rr = ss.get("respiratory_rate")
-                if rr is not None:
-                    resp_rates.append(rr)
-                awake_ms = stage.get("total_awake_time_milli", 0)
-                if awake_ms:
-                    awake_mins.append(round(awake_ms / 60_000))
-                dist = stage.get("disturbance_count")
-                if dist is not None:
-                    disturbances_list.append(dist)
-            if sleep_hours:
-                avg_sleep = round(sum(sleep_hours) / len(sleep_hours), 1)
-                min_sleep = min(sleep_hours)
-                max_sleep = max(sleep_hours)
-                under_7 = sum(1 for h in sleep_hours if h < 7)
-                fmt = whoop_client.format_hours_min
-                data_parts.append(f"Сон avg: {fmt(avg_sleep)} (min {fmt(min_sleep)}, max {fmt(max_sleep)}), дней < 7h: {under_7}/{len(sleep_hours)}")
-            if rem_mins and deep_mins:
-                data_parts.append(f"Фазы avg: REM {round(sum(rem_mins)/len(rem_mins))}min, Deep {round(sum(deep_mins)/len(deep_mins))}min")
-            if sleep_perfs:
-                data_parts.append(f"Sleep performance avg: {round(sum(sleep_perfs) / len(sleep_perfs))}%")
-            if sleep_effs:
-                data_parts.append(f"Sleep efficiency avg: {round(sum(sleep_effs) / len(sleep_effs))}%")
-            if sleep_consistencies:
-                data_parts.append(f"Sleep consistency avg: {round(sum(sleep_consistencies) / len(sleep_consistencies))}%")
-            if awake_mins:
-                data_parts.append(f"Пробуждения avg: {round(sum(awake_mins)/len(awake_mins))}min")
-            if disturbances_list:
-                data_parts.append(f"Disturbances avg: {round(sum(disturbances_list)/len(disturbances_list), 1)}x/ночь")
-            if resp_rates:
-                data_parts.append(f"Respiratory rate avg: {round(sum(resp_rates)/len(resp_rates), 1)} rpm")
-
-        # Strain (avg/min/max instead of raw list)
-        if week_cycles:
-            strains = [round(c.get("score", {}).get("strain", 0), 1) for c in week_cycles]
-            avg_strain = round(sum(strains) / len(strains), 1)
-            data_parts.append(f"Day strain avg: {avg_strain} (min {min(strains)}, max {max(strains)})")
-
-        # Workouts (real data, not strain guessing)
-        if week_workouts:
-            from collections import Counter
-            sport_counts = Counter(wo.get("sport_name", "Unknown") for wo in week_workouts)
-            wo_summary = ", ".join(f"{name} x{count}" for name, count in sport_counts.most_common())
-            days_with_workouts = len(set(
-                wo.get("start", "")[:10] for wo in week_workouts if wo.get("start")
-            ))
-            data_parts.append(f"Тренировки: {wo_summary} ({days_with_workouts} дней из 7)")
-        else:
-            data_parts.append("Тренировки: нет за неделю")
-
-        # Body
-        body = whoop_client.get_body_measurement()
-        if body:
-            w = body.get("weight_kilogram") or body.get("body_mass_kg")
-            bf = body.get("body_fat_percentage")
-            if w:
-                data_parts.append(f"Вес: {round(w, 1)} kg")
-            if bf:
-                data_parts.append(f"Body fat: {round(bf, 1)}%")
-
-        data_str = "\n".join(data_parts) if data_parts else "Нет данных за неделю"
-
-        # ── Сообщение 1: сырые данные (без LLM) ──
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=data_str,
-        )
-
-        # ── Сообщение 2: Indra недельный ПНЭИ-анализ ──
-        try:
-            patterns = load_whoop_patterns()
-            baselines = load_whoop_baselines()
-            indra_sessions = load_indra_sessions_week()
-
-            indra_system = INDRA_WHOOP_WEEKLY_PROMPT.format(
-                patterns_context=patterns,
-                baselines_context=baselines,
-                indra_sessions_week=indra_sessions,
-            )
-
-            indra_prompt = f"""Еженедельные данные WHOOP:
-{data_str}
-
-Дай 2-3 наблюдения о неделе через ПНЭИ-линзу и один минимальный шаг."""
-
-            indra_text = await get_llm_response(
-                indra_prompt,
-                mode="geek",
-                max_tokens=800,
-                skip_context=True,
-                custom_system=indra_system,
-                use_pro=True,
-            )
-            indra_text = re.sub(r'\[SAVE:[^\]]+\]', '', indra_text).strip()
-            if indra_text:
-                sent = await context.bot.send_message(
-                    chat_id=chat_id, text=indra_text,
-                )
-                context.bot_data[f"indra_msg_{chat_id}"] = sent.message_id
-                logger.info(f"Sent Indra weekly PNEI to {chat_id}, msg_id={sent.message_id}")
-        except Exception as e:
-            logger.error(f"Indra weekly PNEI failed: {e}")
-
-        log_whoop_data()
-        logger.info(f"Sent WHOOP weekly summary to {chat_id}")
-    except Exception as e:
-        logger.error(f"WHOOP weekly summary failed: {e}")
-
 
 def get_monday_feelings_keyboard():
     """Inline keyboard for Monday review feelings."""
@@ -1591,14 +1418,7 @@ async def setup_whoop_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         name=f"whoop_evening_{chat_id}",
     )
 
-    # Weekly summary on Mondays at 11:00
-    job_queue.run_daily(
-        whoop_weekly_summary,
-        time=time(hour=11, minute=0, tzinfo=TZ),
-        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
-        chat_id=chat_id,
-        name=f"whoop_weekly_{chat_id}",
-    )
+    # Weekly summary moved to Claude Code scheduled task `health-weekly` (Sun 12:15)
 
     # Sleep reminders: 3-level escalation (01:05, 01:35, 02:05)
     for job in job_queue.get_jobs_by_name(f"sleep_reminder_{chat_id}"):
