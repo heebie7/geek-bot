@@ -307,3 +307,37 @@ def food_quick_keyboard(custom_dishes: dict) -> InlineKeyboardMarkup:
         InlineKeyboardButton("Отмена", callback_data="fq_cancel"),
     ])
     return InlineKeyboardMarkup(buttons)
+
+
+# ── NS Check-in ──────────────────────────────────────────────────────
+
+def ns_checkin_keyboard() -> InlineKeyboardMarkup:
+    """Evening NS check-in: how is the nervous system today?"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Ок", callback_data="ns_ok"),
+            InlineKeyboardButton("Так себе", callback_data="ns_meh"),
+        ],
+        [
+            InlineKeyboardButton("Плохо", callback_data="ns_bad"),
+            InlineKeyboardButton("Спазм/боль", callback_data="ns_spasm"),
+        ],
+    ])
+
+
+def ns_helped_keyboard() -> InlineKeyboardMarkup:
+    """Follow-up: what helped? (shown after meh/bad/spasm)."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Ношпа", callback_data="nsh_noshpa"),
+            InlineKeyboardButton("Валерьянка/ГАБА", callback_data="nsh_gaba"),
+        ],
+        [
+            InlineKeyboardButton("Поглаживание", callback_data="nsh_touch"),
+            InlineKeyboardButton("Гамак", callback_data="nsh_hammock"),
+        ],
+        [
+            InlineKeyboardButton("Другое (напишу)", callback_data="nsh_other"),
+            InlineKeyboardButton("Ничего", callback_data="nsh_nothing"),
+        ],
+    ])

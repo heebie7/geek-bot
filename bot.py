@@ -1128,6 +1128,14 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         from handlers import handle_food_quick_add
         await handle_food_quick_add(query, context, data)
 
+    # ── NS Check-in ──
+    elif data.startswith("ns_"):
+        from handlers import handle_ns_state
+        await handle_ns_state(query, context)
+    elif data.startswith("nsh_"):
+        from handlers import handle_ns_helped
+        await handle_ns_helped(query, context)
+
 
 # ── Bot commands menu ────────────────────────────────────────────────
 
@@ -1292,6 +1300,14 @@ def main() -> None:
         time=time(hour=21, minute=0, tzinfo=TZ),
         chat_id=OWNER_CHAT_ID,
         name=f"today_evening_{OWNER_CHAT_ID}",
+    )
+    # НС-чек-ин — 21:15 (после вечернего разбора)
+    from handlers import ns_checkin_prompt
+    job_queue.run_daily(
+        ns_checkin_prompt,
+        time=time(hour=21, minute=15, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"ns_checkin_{OWNER_CHAT_ID}",
     )
     # Food evening summary — 22:00
     job_queue.run_daily(

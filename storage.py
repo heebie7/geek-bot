@@ -24,6 +24,7 @@ from config import (
     MORNING_CACHE_FILE,
     WHOOP_PATTERNS_PATH, WHOOP_BASELINES_PATH, INDRA_SESSIONS_DIR,
     FOOD_LOG_FILE, KITCHEN_REPO, KITCHEN_DATA_FILE, DEFAULT_FOOD_TARGETS,
+    NS_CHECKIN_FILE,
 )
 
 
@@ -655,6 +656,16 @@ def get_week_events() -> str:
     except Exception as e:
         logger.error(f"Calendar error: {e}")
         return f"Ошибка календаря: {e}"
+
+
+# === NS CHECK-IN ===
+
+def save_ns_checkin(state: str, helped: str = "", notes: str = "") -> bool:
+    """Save NS check-in to Writing repo as markdown file."""
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    filepath = NS_CHECKIN_FILE.format(date=today)
+    content = f"state: {state}\nhelped: {helped}\nnotes: {notes}\n"
+    return save_writing_file(filepath, content, f"NS check-in {today}: {state}")
 
 
 # === FOOD TRACKING ===

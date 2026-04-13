@@ -2403,6 +2403,79 @@ async def handle_food_quick_add(query, context: ContextTypes.DEFAULT_TYPE, data:
     await query.edit_message_text(f"{line}\n\n{summary}")
 
 
+async def ns_checkin_prompt(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """21:00 daily job: ask how the nervous system is doing today."""
+    from keyboards import ns_checkin_keyboard
+    chat_id = context.job.chat_id or OWNER_CHAT_ID
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Как нервная система сегодня?",
+            reply_markup=ns_checkin_keyboard(),
+        )
+    except Exception as e:
+        logger.error(f"NS checkin prompt failed: {e}")
+
+
+NS_STATE_LABELS = {
+    "ns_ok": "ок",
+    "ns_meh": "так себе",
+    "ns_bad": "плохо",
+    "ns_spasm": "спазм/боль",
+}
+
+NS_HELPED_LABELS = {
+    "nsh_noshpa": "ношпа",
+    "nsh_gaba": "валерьянка/ГАБА",
+    "nsh_touch": "сорегуляция (поглаживание)",
+    "nsh_hammock": "гамак",
+    "nsh_other": "другое",
+    "nsh_nothing": "ничего",
+}
+
+
+async def handle_ns_state(query, context) -> None:
+    """Handle NS check-in state button."""
+    from keyboards import ns_helped_keyboard
+    from storage import save_ns_checkin
+
+    state = NS_STATE_LABELS.get(query.data, query.data)
+    context.user_data["ns_state"] = state
+
+    if query.data == "ns_ok":
+        save_ns_checkin(state)
+        await query.edit_message_text(f"НС сегодня: {state}. Записано.")
+    else:
+        await query.edit_message_text(
+            f"НС сегодня: {state}.\n\nЧто помогло (или помогает)?",
+            reply_markup=ns_helped_keyboard(),
+        )
+
+
+async def handle_ns_helped(query, context) -> None:
+    """Handle NS check-in helped button."""
+    from storage import save_ns_checkin
+
+    state = context.user_data.pop("ns_state", "не указано")
+    helped = NS_HELPED_LABELS.get(query.data, query.data)
+
+    if query.data == "nsh_other":
+        context.user_data["ns_helped_waiting"] = True
+        context.user_data["ns_state_saved"] = state
+        await query.edit_message_text(
+            f"НС сегодня: {state}.\nНапиши, что помогло (текстом):"
+        )
+    else:
+        save_ns_checkin(state, helped)
+        await query.edit_message_text(f"НС сегодня: {state}. Помогло: {helped}. Записано.")
+
+        if state in ("плохо", "спазм/боль"):
+            await query.message.reply_text(
+                "Протокол при спазме: ношпа + валерьянка/ГАБА + сорегуляция (поглаживание). "
+                "Позвать Индру? /indra"
+            )
+
+
 async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
     """22:00 daily job: send food summary for the day + Maks commentary."""
     log_data = load_food_log()
@@ -2444,6 +2517,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Обработка текстовых сообщений."""
     user_message = update.message.text
     mode = context.user_data.get("mode", "geek")
+
+    # ── NS check-in "other" text mode ──
+    if context.user_data.get("ns_helped_waiting"):
+        context.user_data.pop("ns_helped_waiting", None)
+        state = context.user_data.pop("ns_state_saved", "не указано")
+        from storage import save_ns_checkin
+        save_ns_checkin(state, user_message.strip())
+        await update.message.reply_text(f"НС: {state}. Помогло: {user_message.strip()}. Записано.")
+        return
 
     # ── Food weight correction mode ──
     if context.user_data.get("food_weight_correcting"):
