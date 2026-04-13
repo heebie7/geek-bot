@@ -1107,6 +1107,15 @@ def get_morning_whoop_data() -> dict:
     }
 
 
+async def whoop_morning_data_write(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Silent morning job — write today's recovery/sleep data to vault for scheduled tasks."""
+    try:
+        log_whoop_data()
+        logger.info("Morning WHOOP data write completed")
+    except Exception as e:
+        logger.error(f"Morning WHOOP data write failed: {e}")
+
+
 async def whoop_morning_recovery(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send morning recovery notification with feeling buttons."""
     job = context.job

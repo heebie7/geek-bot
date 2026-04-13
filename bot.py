@@ -68,6 +68,7 @@ from handlers import (
     myid_command,
     check_reminders,
     sleep_reminder_job, whoop_morning_recovery, whoop_evening_update,
+    whoop_morning_data_write,
     monday_review, get_morning_whoop_data,
     send_scheduled_reminder, send_finance_csv_reminder,
     handle_voice, handle_photo_note, handle_message, handle_remind_callback,
@@ -1244,11 +1245,20 @@ def main() -> None:
     job_queue.run_repeating(check_reminders, interval=60, first=10)
 
     # Автозапуск WHOOP jobs для основного пользователя
+    # whoop_morning_recovery moved to Claude Code scheduled task `whoop-morning` (daily 12:00)
+    # Morning silent data write — ensures today's WHOOP note is in vault before scheduled task
     job_queue.run_daily(
-        whoop_morning_recovery,
-        time=time(hour=12, minute=0, tzinfo=TZ),
+        whoop_morning_data_write,
+        time=time(hour=11, minute=45, tzinfo=TZ),
         chat_id=OWNER_CHAT_ID,
-        name=f"whoop_morning_{OWNER_CHAT_ID}",
+        name=f"whoop_morning_write_{OWNER_CHAT_ID}",
+    )
+    # Second write at 12:30 — safety net before morning-inspiration task
+    job_queue.run_daily(
+        whoop_morning_data_write,
+        time=time(hour=12, minute=30, tzinfo=TZ),
+        chat_id=OWNER_CHAT_ID,
+        name=f"whoop_midday_write_{OWNER_CHAT_ID}",
     )
     job_queue.run_daily(
         whoop_evening_update,
@@ -1302,21 +1312,8 @@ def main() -> None:
         chat_id=OWNER_CHAT_ID,
         name=f"ns_checkin_{OWNER_CHAT_ID}",
     )
-    # Food evening summary — 22:00
-    job_queue.run_daily(
-        food_evening_summary,
-        time=time(hour=22, minute=0, tzinfo=TZ),
-        chat_id=OWNER_CHAT_ID,
-        name=f"food_evening_{OWNER_CHAT_ID}",
-    )
-    # Утреннее вдохновение от трёх голосов (Indra + Maks + Ksenia) — 12:30
-    # После whoop_morning_recovery (12:00), чтобы WHOOP-данные были свежими
-    job_queue.run_daily(
-        morning_inspiration,
-        time=time(hour=12, minute=30, tzinfo=TZ),
-        chat_id=OWNER_CHAT_ID,
-        name=f"morning_inspiration_{OWNER_CHAT_ID}",
-    )
+    # Food evening summary moved to Claude Code scheduled task `food-evening` (daily 22:00)
+    # Morning inspiration moved to Claude Code scheduled task `morning-inspiration` (daily 12:30)
     logger.info(f"WHOOP, Monday review, task deadline, and food jobs scheduled for owner {OWNER_CHAT_ID}")
 
     # Обработка кнопок
