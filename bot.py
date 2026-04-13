@@ -1267,14 +1267,7 @@ def main() -> None:
         name=f"whoop_evening_{OWNER_CHAT_ID}",
     )
     # Weekly summary moved to Claude Code scheduled task `health-weekly` (Sun 12:15)
-    # Monday review at 10:00
-    job_queue.run_daily(
-        monday_review,
-        time=time(hour=10, minute=0, tzinfo=TZ),
-        days=(1,),  # Monday (0=Sun in python-telegram-bot v20+)
-        chat_id=OWNER_CHAT_ID,
-        name=f"monday_review_{OWNER_CHAT_ID}",
-    )
+    # Monday review moved to Claude Code scheduled task `captain-weekly` (Mon 12:00)
     # Saturday finance CSV reminder at 10:00
     job_queue.run_daily(
         send_finance_csv_reminder,
