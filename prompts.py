@@ -460,9 +460,19 @@ FOOD_TEXT_ONLY_PROMPT = """Estimate nutrition for the described food. Return JSO
   "confidence": 0.0-1.0
 }}
 
-If the description explicitly states weight (e.g. "240 г", "100 grams", "2 pieces of 50g") — use that weight exactly. Otherwise estimate weight_g for a single standard serving (small=100g, standard=200g, large=350g as rough anchors, adjust by dish type).
+Weight estimation rules (in priority order):
+1. If description states weight ("240 г", "100 grams") — use exactly.
+2. If description states count ("2 egg bites", "16 роллов", "3 штуки") — multiply by per-piece weight below.
+3. If plural dish name with no count ("egg bites", "роллы", "сырники", "котлеты") — assume 2 pieces as default snack serving, NOT a full meal.
+4. Singular/mass nouns ("суп", "каша", "салат") without weight — 200g standard serving.
+
+Per-piece weights for штучные dishes:
+- egg bite: 44g | protein cookie/brownie bar: 50g | sushi roll (филадельфия/маки): 18-22g
+- котлета домашняя: 60g | сырник: 60g | пельмень: 15g | оладья: 40g
+- бутерброд/сэндвич: 100-150g | блин: 60g | яйцо (крупное): 55g
+
 ALL KBJU values (kcal, protein, fat, carbs, fiber, calcium) MUST correspond to weight_g, not to a standard 100g serving. Compute them as (per-100g-estimate) × (weight_g / 100).
-Typical per-100g density anchors: lean meat 150-200 kcal, fatty meat 250-350, cheese 300-400, sushi rolls 180-220, bread 250-280, pasta cooked 130, potatoes 80-100, vegetables 20-60, protein brownies 150-280 (fiber/fiber-bean based lower), nuts/seeds 550-650, oils 900.
+Typical per-100g density anchors: lean meat 150-200 kcal, fatty meat 250-350, cheese 300-400, sushi rolls 180-220, bread 250-280, pasta cooked 130, potatoes 80-100, vegetables 20-60, egg bites 100-150, protein brownies 150-280 (fiber-bean based lower), nuts/seeds 550-650, oils 900.
 Calcium (mg) reference: dairy is the main source (milk/kefir 110-120 per 100g, hard cheese 700-1000, cottage 120), sardines-with-bones 380, almonds 260, sesame 975, tofu 350. Most meat/grain dishes <30mg.
 Food description: {caption}"""
 
