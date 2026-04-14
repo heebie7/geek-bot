@@ -661,11 +661,35 @@ def get_week_events() -> str:
 # === NS CHECK-IN ===
 
 def save_ns_checkin(state: str, helped: str = "", notes: str = "") -> bool:
-    """Save NS check-in to Writing repo as markdown file."""
+    """Save NS check-in to single rolling log file."""
+    import re
     today = datetime.now(TZ).strftime("%Y-%m-%d")
-    filepath = NS_CHECKIN_FILE.format(date=today)
-    content = f"state: {state}\nhelped: {helped}\nnotes: {notes}\n"
-    return save_writing_file(filepath, content, f"NS check-in {today}: {state}")
+    section_body = f"state: {state}\nhelped: {helped}\nnotes: {notes}"
+    new_entry = f"## {today}\n{section_body}\n"
+
+    raw = get_writing_file(NS_CHECKIN_FILE)
+    if not raw:
+        content = (
+            f"---\ntype: ns-checkin\nupdated: {today}\n---\n\n"
+            f"# НС чек-ин\n\n{new_entry}"
+        )
+    else:
+        content = re.sub(r'updated: \d{4}-\d{2}-\d{2}', f'updated: {today}', raw)
+        if f"## {today}\n" in content:
+            content = re.sub(
+                rf'## {re.escape(today)}\n.*?(?=\n## |\Z)',
+                new_entry.rstrip('\n'),
+                content,
+                flags=re.DOTALL
+            )
+        else:
+            header_end = "# НС чек-ин\n\n"
+            if header_end in content:
+                content = content.replace(header_end, f"{header_end}{new_entry}\n", 1)
+            else:
+                content = content.rstrip('\n') + f"\n\n{new_entry}"
+
+    return save_writing_file(NS_CHECKIN_FILE, content, f"NS check-in {today}: {state}")
 
 
 # === FOOD TRACKING ===

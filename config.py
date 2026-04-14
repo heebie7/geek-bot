@@ -100,7 +100,7 @@ DEFAULT_FOOD_TARGETS = {
     "calcium": 1100,
 }
 FOOD_TOPIC_ID = 17  # "Еда" topic in From Geek group
-NS_CHECKIN_FILE = "life/health/ns-checkin/{date}.md"  # {date} replaced at runtime
+NS_CHECKIN_FILE = "life/health/ns-checkin.md"
 
 # ── Reading channel (for quote saving) ────────────────────────────────
 
