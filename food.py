@@ -123,11 +123,17 @@ def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional
     }
     if match:
         entry["matched_dish"] = match.get("name")
-        entry["kcal"] = match.get("kcal", entry["kcal"])
-        entry["protein"] = match.get("protein", entry["protein"])
-        entry["fat"] = match.get("fat", entry["fat"])
-        entry["carbs"] = match.get("carbs", entry["carbs"])
-        # fiber and calcium always from Gemini (kitchen DB doesn't track them)
+        # Kitchen stores per-100g values — scale by weight_g
+        weight_g = entry.get("weight_g", 0) or 0
+        ratio = weight_g / 100 if weight_g else 1.0  # no weight → assume 100g serving
+        for field in ("kcal", "protein", "fat", "carbs"):
+            v = match.get(field)
+            if v is not None:
+                try:
+                    entry[field] = round(float(v) * ratio, 1)
+                except (TypeError, ValueError):
+                    pass
+        # fiber and calcium always from Gemini (kitchen DB doesn't track them reliably yet)
         entry["source"] = "kitchen_match"
     elif caption:
         entry["source"] = "vision+caption"

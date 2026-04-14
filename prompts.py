@@ -449,6 +449,7 @@ FOOD_TEXT_ONLY_PROMPT = """Estimate nutrition for the described food. Return JSO
 
 {{
   "name": "dish name in Russian",
+  "weight_g": estimated_weight_in_grams_int,
   "kcal": estimated_calories_int,
   "protein": grams_int,
   "fat": grams_int,
@@ -459,8 +460,9 @@ FOOD_TEXT_ONLY_PROMPT = """Estimate nutrition for the described food. Return JSO
   "confidence": 0.0-1.0
 }}
 
-Estimate for a single standard serving unless description suggests otherwise.
-If portion looks small or large, adjust KBJU estimates proportionally.
+If the description explicitly states weight (e.g. "240 г", "100 grams", "2 pieces of 50g") — use that weight exactly. Otherwise estimate weight_g for a single standard serving (small=100g, standard=200g, large=350g as rough anchors, adjust by dish type).
+ALL KBJU values (kcal, protein, fat, carbs, fiber, calcium) MUST correspond to weight_g, not to a standard 100g serving. Compute them as (per-100g-estimate) × (weight_g / 100).
+Typical per-100g density anchors: lean meat 150-200 kcal, fatty meat 250-350, cheese 300-400, sushi rolls 180-220, bread 250-280, pasta cooked 130, potatoes 80-100, vegetables 20-60, protein brownies 150-280 (fiber/fiber-bean based lower), nuts/seeds 550-650, oils 900.
 Calcium (mg) reference: dairy is the main source (milk/kefir 110-120 per 100g, hard cheese 700-1000, cottage 120), sardines-with-bones 380, almonds 260, sesame 975, tofu 350. Most meat/grain dishes <30mg.
 Food description: {caption}"""
 
