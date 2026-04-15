@@ -2819,11 +2819,94 @@ def recognize_cube_face(photo_bytes: bytes) -> dict:
         return {"exercise": None}
 
 
+_KSENIA_INSTRUCTIONS = {
+    "leg raises": (
+        "1. Лечь на спину, поясница прижата к полу\n"
+        "2. Поднять ноги до 90°\n"
+        "3. Опускать медленно — стоп, когда поясница отрывается (~30–40°)\n"
+        "4. Можно с согнутыми коленями, если сложно удержать поясницу"
+    ),
+    "backward lunges": (
+        "1. Встать прямо, руки на бёдрах или вперёд для баланса\n"
+        "2. Шаг назад, колено задней ноги — вниз (не бить об пол)\n"
+        "3. Колено передней ноги — над щиколоткой, не заваливается внутрь\n"
+        "4. Подниматься через пятку передней ноги, медленно"
+    ),
+    "crunches": (
+        "1. Лечь, колени согнуты, стопы на полу\n"
+        "2. Руки за ушами, не тянуть за шею\n"
+        "3. Приподнять только лопатки — этого достаточно, не делать полный подъём\n"
+        "4. Медленно опустить, не бросать спину"
+    ),
+    "wild card": "Что бы ни выпало — не форсируй амплитуду, не уходи в крайние точки.",
+    "sumo squats": (
+        "1. Ноги шире плеч, носки наружу ~45°\n"
+        "2. Опускаться медленно, колени по линии носков\n"
+        "3. Остановиться на параллели — ниже не нужно\n"
+        "4. Подниматься через пятки, не заваливать колени внутрь"
+    ),
+    "plank": (
+        "1. На предплечьях или на руках\n"
+        "2. Если на руках — локти чуть согнуты, не выпрямлять до конца\n"
+        "3. Тело — прямая линия: не провисает живот, не задирается таз\n"
+        "4. Дышать, не задерживать"
+    ),
+    "burpees": (
+        "Без прыжка — ударная нагрузка лишняя:\n"
+        "1. Опустить руки на пол, шагнуть ногами назад в планку\n"
+        "2. Удержать планку 1 сек\n"
+        "3. Шагнуть ногами вперёд к рукам\n"
+        "4. Встать и подняться на носки — вместо прыжка"
+    ),
+    "mountain climbers": (
+        "1. Планка на руках, локти чуть согнуты\n"
+        "2. Поочерёдно подтягивать колено под грудь — без рывков\n"
+        "3. Запястья некомфортны — делай на кулаках"
+    ),
+    "high knees": (
+        "1. Стоять на месте, в обуви\n"
+        "2. Поднимать колено до уровня бедра\n"
+        "3. Приземляться мягко на переднюю часть стопы, не шлёпать\n"
+        "4. Руки в такт"
+    ),
+    "arm circles": (
+        "1. Руки в стороны\n"
+        "2. Вращения с напряжёнными мышцами плеча — не расхлябанно\n"
+        "3. Не форсируй амплитуду в крайней точке — стабилизация, не растяжка\n"
+        "4. 15 в одну сторону, 15 в другую"
+    ),
+    "run": (
+        "1. В обуви, мягкое приземление на переднюю часть стопы\n"
+        "2. Не барабанить пятками\n"
+        "Вариант: быстрая ходьба на месте с высоким подъёмом бедра — нагрузка та же, ударная меньше"
+    ),
+    "incline push ups": (
+        "1. Руки на опоре (стул, подоконник)\n"
+        "2. Тело прямое от головы до пяток\n"
+        "3. Опускаться медленно, локти ~90° в нижней точке\n"
+        "4. Вверх — не выпрямлять локти до конца"
+    ),
+}
+
+
+def _get_ksenia_tip(exercise_name: str) -> str:
+    """Find Ksenia's instruction for the exercise (fuzzy match)."""
+    key = exercise_name.lower().strip()
+    # Exact match
+    if key in _KSENIA_INSTRUCTIONS:
+        return _KSENIA_INSTRUCTIONS[key]
+    # Partial match
+    for k, v in _KSENIA_INSTRUCTIONS.items():
+        if k in key or key in k:
+            return v
+    return ""
+
+
 async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle cube face photos in the movement topic → log exercise."""
+    """Handle cube face photos in the movement topic → log exercise + Ksenia tip."""
     from config import READING_GROUP_ID, MOVEMENT_TOPIC_ID, MOVEMENT_LOG_FILE
     from storage import get_writing_file, save_writing_file
-    from datetime import datetime, timezone
+    from datetime import datetime
     import pytz
 
     msg = update.message
@@ -2857,11 +2940,10 @@ async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TY
     # Find today's section or append
     date_header = f"## {date_str}"
     if date_header in existing:
-        # Insert entry after the date header
         lines = existing.splitlines()
         new_lines = []
         inserted = False
-        for i, line in enumerate(lines):
+        for line in lines:
             new_lines.append(line)
             if not inserted and line.strip() == date_header:
                 new_lines.append(entry_line)
@@ -2872,15 +2954,22 @@ async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TY
 
     saved = save_writing_file(MOVEMENT_LOG_FILE, new_content, f"movement: {exercise} {date_str}")
     label = f"{exercise} {reps}".strip()
+
+    # Build reply: confirmation + Ksenia tip
+    tip = _get_ksenia_tip(exercise)
+    if tip:
+        reply_text = f"Записано: {label}\n\n💬 Ксения:\n{tip}"
+    else:
+        reply_text = f"Записано: {label}"
+
     if saved:
         try:
             from telegram import ReactionTypeEmoji
             await msg.set_reaction([ReactionTypeEmoji(emoji="💪")])
         except Exception:
             pass
-        await msg.reply_text(f"Записано: {label}")
-    else:
-        await msg.reply_text(f"Записано: {label} (не удалось сохранить в файл)")
+
+    await msg.reply_text(reply_text)
 
 
 async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
