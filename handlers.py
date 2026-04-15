@@ -2904,10 +2904,8 @@ def _get_ksenia_tip(exercise_name: str) -> str:
 
 async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle cube face photos in the movement topic → log exercise + Ksenia tip."""
-    from config import READING_GROUP_ID, MOVEMENT_TOPIC_ID, MOVEMENT_LOG_FILE
+    from config import READING_GROUP_ID, MOVEMENT_TOPIC_ID, MOVEMENT_LOG_FILE, TZ
     from storage import get_writing_file, save_writing_file
-    from datetime import datetime
-    import pytz
 
     msg = update.message
     if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != MOVEMENT_TOPIC_ID:
@@ -2926,8 +2924,7 @@ async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TY
         await msg.reply_text("Не удалось прочитать грань кубика.")
         return
 
-    tz = pytz.timezone("Asia/Tbilisi")
-    now = datetime.now(tz)
+    now = datetime.now(TZ)
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M")
     entry_line = f"- {time_str} — {exercise} ({reps})" if reps else f"- {time_str} — {exercise}"
