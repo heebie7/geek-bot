@@ -1759,6 +1759,72 @@ async def handle_food_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 
+async def handle_multi_item_meal(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    meal_label: str | None,
+    items: list[str],
+) -> None:
+    """Recognize and auto-log a comma-separated meal (no confirmation dialog)."""
+    msg = update.message
+    await msg.chat.send_action("typing")
+
+    log_data = load_food_log()
+    custom = log_data.get("custom_dishes", {})
+    dishes = load_kitchen_dishes()
+
+    logged = []
+    failed = []
+
+    for item_text in items:
+        custom_match = match_custom_dish(item_text, custom)
+        if custom_match:
+            entry = build_custom_entry(custom_match)
+        else:
+            kitchen_match = match_kitchen_dish(item_text, dishes)
+            if kitchen_match:
+                recognition = {"name": kitchen_match.get("name", item_text), "confidence": 0.8}
+                entry = build_food_entry(recognition, kitchen_match, item_text)
+            else:
+                recognition = recognize_food(None, item_text)
+                if recognition.get("confidence", 0.0) < 0.3:
+                    failed.append(item_text)
+                    continue
+                entry = build_food_entry(recognition, None, item_text)
+                entry["source"] = "text"
+
+        if meal_label:
+            entry["meal"] = meal_label
+        log_data["log"].append(entry)
+        logged.append(entry)
+
+    if logged:
+        save_food_log(log_data)
+
+    # Build reply
+    lines = []
+    total_kcal = total_p = total_f = total_c = 0
+    for e in logged:
+        w = f" ({e['weight_g']}г)" if e.get("weight_g") else ""
+        lines.append(
+            f"✅ {e['name']}{w} — {e['kcal']} ккал | {e['protein']}Б | {e['fat']}Ж | {e['carbs']}У"
+        )
+        total_kcal += e.get("kcal", 0)
+        total_p += e.get("protein", 0)
+        total_f += e.get("fat", 0)
+        total_c += e.get("carbs", 0)
+
+    for f_item in failed:
+        lines.append(f"❓ Не распознал: {f_item}")
+
+    if len(logged) > 1:
+        lines.append(f"\n🍽 Итого приём: {round(total_kcal)} ккал | {round(total_p)}Б | {round(total_f)}Ж | {round(total_c)}У")
+
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
+    await msg.reply_text("\n".join(lines) + "\n\n" + summary)
+
+
 async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages in the Food topic of From Geek group."""
     from config import FOOD_TOPIC_ID, READING_GROUP_ID
@@ -1880,6 +1946,27 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
                 await msg.reply_text("Данные потеряны.")
             return
 
+    # ── Multi-item meal detection ──
+    # "Обед: item1, item2, item3" or plain "item1, item2, item3"
+    import re as _re
+    meal_prefix_match = _re.match(
+        r'^(завтрак|обед|ужин|перекус|ланч)[:\s]+(.+)$',
+        text.strip(), _re.IGNORECASE | _re.DOTALL
+    )
+    if meal_prefix_match:
+        meal_label = meal_prefix_match.group(1).lower()
+        items_str = meal_prefix_match.group(2)
+    else:
+        meal_label = None
+        items_str = text.strip()
+
+    raw_items = [i.strip() for i in _re.split(r',\s*|\n', items_str) if i.strip()]
+
+    if len(raw_items) >= 2:
+        await handle_multi_item_meal(update, context, meal_label, raw_items)
+        return
+
+    # ── Single-item flow ──
     # Check custom dishes first (instant, no Gemini)
     log_data = load_food_log()
     custom = log_data.get("custom_dishes", {})
