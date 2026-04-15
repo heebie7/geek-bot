@@ -1132,11 +1132,11 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
         await handle_food_skip_custom(query, context)
     elif data == "food_log":
         from storage import load_food_log
-        from food import format_daily_log_for_telegram
+        from food import format_daily_log_for_telegram, _log_date
         from config import TZ
         from datetime import datetime
         log_data = load_food_log()
-        today = datetime.now(TZ).strftime("%Y-%m-%d")
+        today = _log_date(datetime.now(TZ))
         day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), today)
         await query.edit_message_text(day_log)
     elif data == "fq_cancel":

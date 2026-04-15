@@ -1861,10 +1861,10 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
                 elif total:
                     new_weight = int(total.group(1))
                 if new_weight and new_weight > 0:
-                    from food import _rescale_entry
+                    from food import _rescale_entry, _log_date
                     # Update last log entry for this dish
                     log_data = load_food_log()
-                    today = datetime.now(TZ).strftime("%Y-%m-%d")
+                    today = _log_date(datetime.now(TZ))
                     # Find last matching entry in today's log
                     for i in range(len(log_data["log"]) - 1, -1, -1):
                         e = log_data["log"][i]
