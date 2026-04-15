@@ -36,7 +36,7 @@ from storage import (
     get_reminders, is_muted, save_morning_cache,
     load_whoop_patterns, load_whoop_baselines,
     load_latest_indra_session,
-    load_food_log, save_food_log, load_kitchen_dishes,
+    load_food_log, save_food_log, load_kitchen_dishes, update_food_log_md,
 )
 from tasks import (
     get_life_tasks, add_task_to_zone, complete_task,
@@ -65,7 +65,7 @@ from meal_data import generate_weekly_menu
 from food import (
     recognize_food, match_custom_dish, match_kitchen_dish,
     build_food_entry, build_custom_entry,
-    format_food_result, format_daily_summary,
+    format_food_result, format_daily_summary, format_daily_log_for_telegram,
 )
 
 
@@ -1800,6 +1800,8 @@ async def handle_multi_item_meal(
 
     if logged:
         save_food_log(log_data)
+        log_date = logged[0].get("date", datetime.now(TZ).strftime("%Y-%m-%d"))
+        update_food_log_md(log_data, log_date)
 
     # Build reply
     lines = []
@@ -1820,9 +1822,9 @@ async def handle_multi_item_meal(
     if len(logged) > 1:
         lines.append(f"\n🍽 Итого приём: {round(total_kcal)} ккал | {round(total_p)}Б | {round(total_f)}Ж | {round(total_c)}У")
 
-    today = datetime.now(TZ).strftime("%Y-%m-%d")
-    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
-    await msg.reply_text("\n".join(lines) + "\n\n" + summary)
+    log_date = logged[0].get("date", datetime.now(TZ).strftime("%Y-%m-%d")) if logged else datetime.now(TZ).strftime("%Y-%m-%d")
+    day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), log_date)
+    await msg.reply_text("\n".join(lines) + "\n\n" + day_log)
 
 
 async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1869,10 +1871,11 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
                         if e.get("date") == today and e.get("name") == entry.get("name"):
                             _rescale_entry(e, new_weight)
                             save_food_log(log_data)
+                            update_food_log_md(log_data, today)
                             context.user_data["last_confirmed_food"] = e
                             result_text = format_food_result(e)
-                            summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
-                            await msg.reply_text(f"{result_text}\n\n✅ Пересчитано\n\n{summary}")
+                            day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), today)
+                            await msg.reply_text(f"{result_text}\n\n✅ Пересчитано\n\n{day_log}")
                             return
                     await msg.reply_text("Не нашёл запись в логе за сегодня.")
                     return
@@ -2062,8 +2065,9 @@ async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None
     log_data = load_food_log()
     log_data["log"].append(entry)
     save_food_log(log_data)
+    update_food_log_md(log_data, entry["date"])
 
-    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), entry["date"])
+    day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), entry["date"])
     original = query.message.text or ""
 
     # Offer to save as custom dish if not already from custom/kitchen
@@ -2071,11 +2075,11 @@ async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None
         from keyboards import food_save_custom_keyboard
         context.user_data["last_confirmed_food"] = entry
         await query.edit_message_text(
-            f"{original}\n\n✅ Записано\n\n{summary}",
+            f"{original}\n\n✅ Записано\n\n{day_log}",
             reply_markup=food_save_custom_keyboard(),
         )
     else:
-        await query.edit_message_text(f"{original}\n\n✅ Записано\n\n{summary}")
+        await query.edit_message_text(f"{original}\n\n✅ Записано\n\n{day_log}")
     return
 
 
@@ -2306,8 +2310,9 @@ async def handle_food_quick_add(query, context: ContextTypes.DEFAULT_TYPE, data:
     entry = build_custom_entry(dish)
     log_data["log"].append(entry)
     save_food_log(log_data)
+    update_food_log_md(log_data, entry["date"])
 
-    # Show short result + daily totals
+    # Show short result + itemized day log
     ca = entry.get("calcium", 0) or 0
     ca_str = f" | Ca: {ca}мг" if ca > 0 else ""
     line = (
@@ -2315,8 +2320,8 @@ async def handle_food_quick_add(query, context: ContextTypes.DEFAULT_TYPE, data:
         f"Б: {entry['protein']}г | Ж: {entry['fat']}г | У: {entry['carbs']}г | "
         f"Клетч: {entry['fiber']}г{ca_str} | {entry['kcal']} kcal"
     )
-    summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), entry["date"])
-    await query.edit_message_text(f"{line}\n\n{summary}")
+    day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), entry["date"])
+    await query.edit_message_text(f"{line}\n\n{day_log}")
 
 
 async def ns_checkin_prompt(context: ContextTypes.DEFAULT_TYPE) -> None:

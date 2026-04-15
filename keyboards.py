@@ -303,9 +303,10 @@ def food_quick_keyboard(custom_dishes: dict) -> InlineKeyboardMarkup:
         buttons.append(row)
 
     buttons.append([
+        InlineKeyboardButton("📋 Лог", callback_data="food_log"),
         InlineKeyboardButton("📷 Фото/текст", callback_data="fq_cancel"),
-        InlineKeyboardButton("Отмена", callback_data="fq_cancel"),
     ])
+    buttons.append([InlineKeyboardButton("Отмена", callback_data="fq_cancel")])
     return InlineKeyboardMarkup(buttons)
 
 

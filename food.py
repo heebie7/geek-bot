@@ -101,11 +101,19 @@ def match_kitchen_dish(name: str, dishes: list) -> Optional[dict]:
     return None
 
 
+def _log_date(now: datetime) -> str:
+    """Return log date: if before 05:00 → previous day."""
+    from datetime import timedelta
+    if now.hour < 5:
+        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
+
+
 def build_food_entry(recognition: dict, match: Optional[dict], caption: Optional[str]) -> dict:
     """Assemble a food log entry from recognition result and optional kitchen match."""
     now = datetime.now(TZ)
     entry = {
-        "date": now.strftime("%Y-%m-%d"),
+        "date": _log_date(now),
         "time": now.strftime("%H:%M"),
         "meal": get_meal_type(now.hour),
         "name": recognition.get("name", "Неизвестное блюдо"),
@@ -166,7 +174,7 @@ def build_custom_entry(dish: dict) -> dict:
     """Build a food log entry from a custom/frequent dish. No Gemini call."""
     now = datetime.now(TZ)
     return {
-        "date": now.strftime("%Y-%m-%d"),
+        "date": _log_date(now),
         "time": now.strftime("%H:%M"),
         "meal": get_meal_type(now.hour),
         "name": dish.get("name", "?"),
@@ -260,6 +268,58 @@ def format_daily_summary(log: list, targets: Optional[dict], date: str) -> str:
         summary += f"\nОсталось: {' | '.join(remaining)}"
 
     return summary
+
+
+_MEAL_RU = {
+    "breakfast": "завтрак", "lunch": "обед", "dinner": "ужин",
+    "snack": "перекус", "ужин": "ужин", "обед": "обед",
+    "завтрак": "завтрак", "перекус": "перекус",
+}
+
+
+def format_daily_log_for_telegram(log: list, targets: Optional[dict], date: str) -> str:
+    """Itemized daily log for Telegram: each entry on its own line + totals."""
+    if targets is None:
+        targets = dict(DEFAULT_FOOD_TARGETS)
+
+    today_entries = [e for e in log if e.get("date") == date]
+    if not today_entries:
+        return "Данных по еде за сегодня нет."
+
+    lines = [f"📋 {date}:"]
+    totals = {"kcal": 0, "protein": 0, "fat": 0, "carbs": 0, "fiber": 0, "calcium": 0}
+
+    for e in today_entries:
+        for k in totals:
+            totals[k] += e.get(k, 0) or 0
+        time = e.get("time", "—")
+        meal = _MEAL_RU.get(e.get("meal", ""), e.get("meal", ""))
+        name = e.get("name", "?")
+        kcal = round(e.get("kcal", 0) or 0)
+        weight = e.get("weight_g")
+        wstr = f" {weight}г" if weight else ""
+        lines.append(f"• {time} {meal} {name}{wstr} — {kcal} ккал")
+
+    lines.append("")
+    lines.append(
+        f"Итого: {round(totals['kcal'])} ккал | "
+        f"Б{round(totals['protein'])} | Ж{round(totals['fat'])} | "
+        f"У{round(totals['carbs'])} | Клетч{round(totals['fiber'])} | "
+        f"Ca{round(totals['calcium'])}"
+    )
+
+    remaining = []
+    for key, label in [("protein", "Б"), ("fiber", "Клетч"), ("calcium", "Ca"), ("kcal", "ккал")]:
+        tv = targets.get(key)
+        if tv is None:
+            continue
+        diff = tv - totals.get(key, 0)
+        if diff > 0:
+            remaining.append(f"{label} -{round(diff)}")
+    if remaining:
+        lines.append("Осталось: " + " | ".join(remaining))
+
+    return "\n".join(lines)
 
 
 def get_meal_type(hour: int) -> str:

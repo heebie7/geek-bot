@@ -715,6 +715,91 @@ def save_food_log(data: dict) -> bool:
     return save_writing_file(FOOD_LOG_FILE, content, "food log update")
 
 
+_FOOD_LOG_MD_FILE = "life/health/food/food-log.md"
+_MEAL_RU_MD = {
+    "breakfast": "завтрак", "lunch": "обед", "dinner": "ужин",
+    "snack": "перекус", "ужин": "ужин", "обед": "обед",
+    "завтрак": "завтрак", "перекус": "перекус",
+}
+
+
+def _build_md_day_section(entries: list, targets: dict, date: str) -> str:
+    """Build markdown table section for one day (for food-log.md)."""
+    lines = [f"## {date}", ""]
+    lines.append("| Время | Приём | Блюдо | вес | ккал | Б | Ж | У | клетч | Ca |")
+    lines.append("|-------|-------|-------|----:|-----:|--:|--:|--:|------:|---:|")
+
+    totals = {"kcal": 0, "protein": 0, "fat": 0, "carbs": 0, "fiber": 0, "calcium": 0}
+    for e in entries:
+        for k in totals:
+            totals[k] += e.get(k, 0) or 0
+        time = e.get("time", "—")
+        meal = _MEAL_RU_MD.get(e.get("meal", ""), e.get("meal", ""))
+        name = e.get("name", "?")
+        weight = f"{e['weight_g']}г" if e.get("weight_g") else "—"
+        kcal = round(e.get("kcal", 0) or 0)
+        p = round(e.get("protein", 0) or 0)
+        f_ = round(e.get("fat", 0) or 0)
+        c = round(e.get("carbs", 0) or 0)
+        fib = round(e.get("fiber", 0) or 0)
+        ca = round(e.get("calcium", 0) or 0)
+        lines.append(f"| {time} | {meal} | {name} | {weight} | {kcal} | {p} | {f_} | {c} | {fib} | {ca} |")
+
+    t = totals
+    lines.append(
+        f"| **Итого** | | | | **{round(t['kcal'])}** | **{round(t['protein'])}** | "
+        f"**{round(t['fat'])}** | **{round(t['carbs'])}** | **{round(t['fiber'])}** | **{round(t['calcium'])}** |"
+    )
+    lines.append("")
+
+    tgt = targets or {}
+    norms = []
+    for key, label, unit in [
+        ("kcal", "ккал", "ккал"), ("protein", "белок", "г"), ("fat", "жир", "г"),
+        ("carbs", "углев", "г"), ("fiber", "клетч", "г"), ("calcium", "Ca", "мг"),
+    ]:
+        tv = tgt.get(key)
+        if tv:
+            val = round(t.get(key, 0) or 0)
+            diff = round(tv - val)
+            sign = "+" if diff > 0 else ""
+            norms.append(f"{label} {val}/{tv} {unit} ({sign}{diff})")
+    if norms:
+        lines.append("**Норма:** " + " • ".join(norms))
+
+    return "\n".join(lines)
+
+
+def update_food_log_md(log_data: dict, date: str) -> bool:
+    """Regenerate today's section in food-log.md and save."""
+    import re as _re
+    entries = [e for e in log_data.get("log", []) if e.get("date") == date]
+    targets = log_data.get("daily_targets", {})
+    new_section = _build_md_day_section(entries, targets, date)
+
+    raw = get_writing_file(_FOOD_LOG_MD_FILE) or ""
+    header_marker = f"## {date}"
+
+    if header_marker in raw:
+        idx = raw.index(header_marker)
+        before = raw[:idx]
+        rest = raw[idx + len(header_marker):]
+        m = _re.search(r'\n## \d{4}-\d{2}-\d{2}', rest)
+        after = rest[m.start():] if m else ""
+        content = before + new_section + "\n\n---\n" + after.lstrip("\n")
+    else:
+        m = _re.search(r'\n---\n## \d{4}', raw)
+        if m:
+            insert_pos = m.start() + 5
+            content = raw[:insert_pos] + new_section + "\n\n---\n" + raw[insert_pos:]
+        else:
+            content = raw + "\n\n---\n" + new_section
+
+    now = datetime.now(TZ)
+    content = _re.sub(r'updated: .+', f'updated: {now.strftime("%Y-%m-%d %H:%M")}', content)
+    return save_writing_file(_FOOD_LOG_MD_FILE, content, f"food log md {date}")
+
+
 def load_kitchen_dishes() -> list:
     """Load dishes from family-kitchen repo. Cached daily. KBJU cast to int."""
     global _kitchen_cache, _kitchen_cache_date
