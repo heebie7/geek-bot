@@ -2567,8 +2567,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=food_quick_keyboard(custom),
         )
         return
-    elif user_message == "⚡ Шаги":
-        await next_steps_command(update, context)
+    elif user_message == "🎲 Куб":
+        await cube_roll_handler(update, context)
         return
     elif user_message in ("➕ Add", "📝 Note"):
         context.user_data["note_mode"] = True
@@ -2987,6 +2987,38 @@ def _get_ksenia_tip(exercise_name: str) -> str:
         if k in key or key in k:
             return v
     return ""
+
+
+# Cube exercise list (matches cube.md faces 1–12)
+_CUBE_EXERCISES = [
+    ("Leg raises", "10"),
+    ("Backward lunges", "10 каждой ногой"),
+    ("Crunches", "15"),
+    ("Wild Card", "—"),
+    ("Sumo squats", "10"),
+    ("Plank", "30 сек"),
+    ("Burpees", "8 (без прыжка)"),
+    ("Mountain climbers", "10"),
+    ("High knees", "15 каждой ногой"),
+    ("Arm circles", "30"),
+    ("Run", "2 мин"),
+    ("Incline push ups", "12"),
+]
+
+
+async def cube_roll_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Roll the movement cube: pick random 1–12, show exercise + Ksenia tip."""
+    import random
+    n = random.randint(0, 11)
+    exercise, reps = _CUBE_EXERCISES[n]
+    tip = _get_ksenia_tip(exercise)
+    face_num = n + 1
+    text = f"🎲 Грань {face_num}: {exercise} — {reps}"
+    if tip:
+        text += f"\n\n💬 Ксения:\n{tip}"
+    msg = update.message or (update.callback_query.message if update.callback_query else None)
+    if msg:
+        await msg.reply_text(text)
 
 
 async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

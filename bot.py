@@ -80,6 +80,7 @@ from handlers import (
     food_evening_summary, morning_inspiration,
     handle_translate_text, handle_translate_photo,
     handle_movement_photo,
+    cube_roll_handler,
 )
 from meal_data import generate_weekly_menu
 
@@ -371,6 +372,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "sport":
         msg = random.choice(REMINDERS["sport"])
         await query.message.reply_text(msg)
+
+    # ── Cube roll ──
+    elif data == "cube_roll":
+        await cube_roll_handler(update, context)
+        return
 
     # ── Next steps ──
     elif data == "next_steps":
