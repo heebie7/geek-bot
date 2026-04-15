@@ -127,6 +127,8 @@ BOOK_DIGEST_PROMPT = """Ты — research assistant. Сделай краткий
 {content}"""
 QUOTES_TOPIC_ID = 54  # "Цитаты" topic thread_id
 TRANSLATE_TOPIC_ID = 681  # "Перевод" topic thread_id
+MOVEMENT_TOPIC_ID = 1664  # "WHOOP morning / movement" topic thread_id
+MOVEMENT_LOG_FILE = "life/health/movement/movement-log.md"
 
 # ── Owner ──────────────────────────────────────────────────────────────
 

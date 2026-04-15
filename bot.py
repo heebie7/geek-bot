@@ -79,6 +79,7 @@ from handlers import (
     handle_food_topic_text, handle_food_topic_photo,
     food_evening_summary, morning_inspiration,
     handle_translate_text, handle_translate_photo,
+    handle_movement_photo,
 )
 from meal_data import generate_weekly_menu
 
@@ -1347,6 +1348,12 @@ def main() -> None:
         filters.Chat(READING_GROUP_ID) & filters.PHOTO,
         handle_translate_photo,
     ), group=2)
+
+    # Movement topic (thread 1664) — cube face photo → log exercise
+    application.add_handler(MessageHandler(
+        filters.Chat(READING_GROUP_ID) & filters.PHOTO,
+        handle_movement_photo,
+    ), group=3)
 
     # Обработка текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

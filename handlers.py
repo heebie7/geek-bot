@@ -2785,6 +2785,104 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ── Translation topic handlers ───────────────────────────────────────────
 
 
+def recognize_cube_face(photo_bytes: bytes) -> dict:
+    """Read exercise name and reps from a movement cube face photo via Gemini Vision."""
+    from config import gemini_client, GEMINI_MODEL
+    from google.genai import types as gtypes
+
+    if not gemini_client:
+        return {"exercise": None}
+
+    prompt = (
+        "Это грань куба с упражнением. Прочитай текст на картинке.\n"
+        "Верни JSON строго такого вида:\n"
+        '{"exercise": "название упражнения", "reps": "количество/время как написано на кубике"}\n'
+        "Если текст не читается — верни {\"exercise\": null}.\n"
+        "Только JSON, без пояснений."
+    )
+    parts = [
+        gtypes.Part.from_bytes(data=photo_bytes, mime_type="image/jpeg"),
+        gtypes.Part(text=prompt),
+    ]
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[gtypes.Content(parts=parts)],
+        )
+        import re as _re, json as _json
+        raw = response.text.strip()
+        raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = _re.sub(r'\s*```$', '', raw)
+        return _json.loads(raw)
+    except Exception as e:
+        logger.error(f"Cube face recognition error: {e}")
+        return {"exercise": None}
+
+
+async def handle_movement_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle cube face photos in the movement topic → log exercise."""
+    from config import READING_GROUP_ID, MOVEMENT_TOPIC_ID, MOVEMENT_LOG_FILE
+    from storage import get_writing_file, save_writing_file
+    from datetime import datetime, timezone
+    import pytz
+
+    msg = update.message
+    if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != MOVEMENT_TOPIC_ID:
+        return
+
+    photo = msg.photo[-1]
+    file = await photo.get_file()
+    photo_bytes = await file.download_as_bytearray()
+
+    await msg.chat.send_action("typing")
+    result = recognize_cube_face(bytes(photo_bytes))
+    exercise = result.get("exercise")
+    reps = result.get("reps", "")
+
+    if not exercise:
+        await msg.reply_text("Не удалось прочитать грань кубика.")
+        return
+
+    tz = pytz.timezone("Asia/Tbilisi")
+    now = datetime.now(tz)
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
+    entry_line = f"- {time_str} — {exercise} ({reps})" if reps else f"- {time_str} — {exercise}"
+
+    # Read or create log file
+    existing = get_writing_file(MOVEMENT_LOG_FILE)
+    if not existing:
+        existing = "---\ntype: movement-log\n---\n\n# Movement Log\n\n"
+
+    # Find today's section or append
+    date_header = f"## {date_str}"
+    if date_header in existing:
+        # Insert entry after the date header
+        lines = existing.splitlines()
+        new_lines = []
+        inserted = False
+        for i, line in enumerate(lines):
+            new_lines.append(line)
+            if not inserted and line.strip() == date_header:
+                new_lines.append(entry_line)
+                inserted = True
+        new_content = "\n".join(new_lines) + "\n"
+    else:
+        new_content = existing.rstrip("\n") + f"\n\n{date_header}\n\n{entry_line}\n"
+
+    saved = save_writing_file(MOVEMENT_LOG_FILE, new_content, f"movement: {exercise} {date_str}")
+    label = f"{exercise} {reps}".strip()
+    if saved:
+        try:
+            from telegram import ReactionTypeEmoji
+            await msg.set_reaction([ReactionTypeEmoji(emoji="💪")])
+        except Exception:
+            pass
+        await msg.reply_text(f"Записано: {label}")
+    else:
+        await msg.reply_text(f"Записано: {label} (не удалось сохранить в файл)")
+
+
 async def handle_translate_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages in the Translate topic — auto-translate RU↔EN or formulate."""
     from config import TRANSLATE_TOPIC_ID, READING_GROUP_ID
