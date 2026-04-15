@@ -2404,6 +2404,9 @@ async def food_evening_summary(context: ContextTypes.DEFAULT_TYPE) -> None:
     summary = format_daily_summary(log_data["log"], log_data.get("daily_targets"), today)
     chat_id = context.job.chat_id or OWNER_CHAT_ID
 
+    # Sync MD from JSON at end of day
+    update_food_log_md(log_data, today)
+
     # Base summary (numbers)
     base_text = f"🍽 Итоги дня по еде:\n\n{summary}"
 
