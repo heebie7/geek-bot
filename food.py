@@ -198,6 +198,12 @@ def _rescale_entry(entry: dict, new_weight: int) -> None:
         ratio = new_weight / old_weight
         for field in ("kcal", "protein", "fat", "carbs", "fiber", "calcium"):
             entry[field] = round(entry.get(field, 0) * ratio)
+    elif not old_weight and entry.get("source") == "kitchen_match":
+        # Kitchen DB stores per-100g values; when weight was unknown at save time,
+        # KBJU was stored as 100g-equivalent → rescale to actual weight now
+        ratio = new_weight / 100
+        for field in ("kcal", "protein", "fat", "carbs", "fiber", "calcium"):
+            entry[field] = round(entry.get(field, 0) * ratio)
     entry["weight_g"] = new_weight
 
 
