@@ -1783,7 +1783,10 @@ async def handle_multi_item_meal(
         else:
             kitchen_match = match_kitchen_dish(item_text, dishes)
             if kitchen_match:
-                recognition = {"name": kitchen_match.get("name", item_text), "confidence": 0.8}
+                import re as _re2
+                _wm2 = _re2.search(r'(\d+)\s*г(?:р(?:амм)?)?', item_text, _re2.IGNORECASE)
+                _wg2 = int(_wm2.group(1)) if _wm2 else 0
+                recognition = {"name": kitchen_match.get("name", item_text), "confidence": 0.8, "weight_g": _wg2}
                 entry = build_food_entry(recognition, kitchen_match, item_text)
             else:
                 recognition = recognize_food(None, item_text)
@@ -1986,7 +1989,10 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
     dishes = load_kitchen_dishes()
     kitchen_match = match_kitchen_dish(text, dishes)
     if kitchen_match:
-        recognition = {"name": kitchen_match.get("name", text), "confidence": 0.8}
+        # Extract weight from text if present (e.g. "рагу 250 гр", "суп 300г")
+        _wm = _re.search(r'(\d+)\s*г(?:р(?:амм)?)?', text, _re.IGNORECASE)
+        _weight_g = int(_wm.group(1)) if _wm else 0
+        recognition = {"name": kitchen_match.get("name", text), "confidence": 0.8, "weight_g": _weight_g}
         entry = build_food_entry(recognition, kitchen_match, text)
         context.user_data["pending_food"] = entry
         result_text = format_food_result(entry)
