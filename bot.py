@@ -178,6 +178,68 @@ async def _generate_book_digest(book_path: str, book_info: dict, context):
             pass
 
 
+async def _generate_book_course(book_path: str, book_info: dict, context):
+    """Background task: read book from GitHub, generate LXD mini-course via Gemini, save to minicourses."""
+    from storage import get_writing_file, save_writing_file
+    from config import BOOK_TEACH_PROMPT, COURSE_DIR, gemini_client, GEMINI_MODEL
+    import google.genai as genai
+
+    title = book_info.get("title", "?")
+    logger.info(f"Course: starting for {title} ({book_path})")
+
+    try:
+        # 1. Read book from GitHub
+        content = get_writing_file(book_path)
+        if not content:
+            logger.error(f"Course: could not read {book_path}")
+            return
+
+        # 2. Generate course via Gemini (no images — text only)
+        prompt = BOOK_TEACH_PROMPT.format(title=title, content=content)
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[prompt],
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=6000,
+            ),
+        )
+
+        if not response.text:
+            logger.error(f"Course: empty Gemini response for {title}")
+            return
+
+        course_text = response.text
+        logger.info(f"Course: generated {len(course_text)} chars for {title}")
+
+        # 3. Save to minicourses (synced to phone via Syncthing)
+        from pathlib import Path
+        slug = Path(book_path).stem
+        course_path = f"{COURSE_DIR}/{slug}-minicourse.md"
+        save_writing_file(
+            course_path,
+            course_text,
+            f"course: {title}"
+        )
+        logger.info(f"Course: saved to {course_path}")
+
+        # 4. Notify user in Telegram
+        await context.bot.send_message(
+            chat_id=OWNER_CHAT_ID,
+            text=f"Курс готов: {title}\nСохранён в {COURSE_DIR}",
+            disable_notification=True,
+        )
+
+    except Exception as e:
+        logger.error(f"Course generation error for {title}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=OWNER_CHAT_ID,
+                text=f"Курс ошибка: {title}\n{str(e)[:200]}",
+            )
+        except Exception:
+            pass
+
+
 # ── Callback dispatcher ─────────────────────────────────────────────
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -233,13 +295,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parts = data.split(":")
         if len(parts) == 3:
             _, action, short_id = parts
-            # "teach" is legacy alias for "digest"
-            if action == "teach":
-                action = "digest"
             action_labels = {
                 "urgent": "🔥 Срочно — добавлю в очередь",
                 "later": "📚 Потом — в конец очереди",
                 "digest": "📖 Digest — генерирую...",
+                "teach": "🎓 Курс — генерирую...",
                 "ref": "📎 Справочное",
                 "skip": "⏭ Пропущено",
             }
@@ -287,11 +347,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         pass
                     await query.answer(label)
 
-                    # If digest — launch background generation
+                    # If digest/teach — launch background generation
                     if action == "digest":
                         import asyncio
                         asyncio.create_task(
                             _generate_book_digest(book_path, book_info, context)
+                        )
+                    elif action == "teach":
+                        import asyncio
+                        asyncio.create_task(
+                            _generate_book_course(book_path, book_info, context)
                         )
                 else:
                     await query.answer("Книга не найдена в state")
