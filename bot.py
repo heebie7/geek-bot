@@ -178,63 +178,56 @@ async def _generate_book_digest(book_path: str, book_info: dict, context):
             pass
 
 
-async def _generate_book_course(book_path: str, book_info: dict, context):
-    """Background task: read book from GitHub, generate LXD mini-course via Gemini, save to minicourses."""
+async def _queue_book_course(book_path: str, book_info: dict, context):
+    """Append book to life/course-queue.md for Claude to process via /teach skill later."""
     from storage import get_writing_file, save_writing_file
-    from config import BOOK_TEACH_PROMPT, COURSE_DIR, gemini_client, GEMINI_MODEL
-    import google.genai as genai
+    from datetime import datetime as _dt
 
     title = book_info.get("title", "?")
-    logger.info(f"Course: starting for {title} ({book_path})")
+    queue_file = "life/course-queue.md"
+    logger.info(f"Course queue: adding {title} ({book_path})")
 
     try:
-        # 1. Read book from GitHub
-        content = get_writing_file(book_path)
-        if not content:
-            logger.error(f"Course: could not read {book_path}")
+        existing = get_writing_file(queue_file) or "# Course Queue\n\n<!-- Книги/статьи, помеченные кнопкой «Курс» в book-triage. Обрабатывать через /teach skill. -->\n\n## Pending\n\n"
+
+        # Skip if already queued
+        if book_path in existing:
+            await context.bot.send_message(
+                chat_id=OWNER_CHAT_ID,
+                text=f"Курс уже в очереди: {title}",
+                disable_notification=True,
+            )
             return
 
-        # 2. Generate course via Gemini (no images — text only)
-        prompt = BOOK_TEACH_PROMPT.format(title=title, content=content)
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[prompt],
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=6000,
-            ),
+        timestamp = _dt.now(TZ).strftime("%Y-%m-%d %H:%M")
+        item_type = book_info.get("type", "book")
+        entry = (
+            f"- [{item_type}] {book_path}\n"
+            f"  title: {title}\n"
+            f"  added: {timestamp}\n"
         )
 
-        if not response.text:
-            logger.error(f"Course: empty Gemini response for {title}")
-            return
+        # Insert under "## Pending" section
+        if "## Pending" in existing:
+            new_content = existing.replace("## Pending\n\n", f"## Pending\n\n{entry}\n", 1)
+        else:
+            new_content = existing.rstrip() + f"\n\n## Pending\n\n{entry}\n"
 
-        course_text = response.text
-        logger.info(f"Course: generated {len(course_text)} chars for {title}")
+        save_writing_file(queue_file, new_content, f"course-queue: +{title}")
+        logger.info(f"Course queue: saved entry for {title}")
 
-        # 3. Save to minicourses (synced to phone via Syncthing)
-        from pathlib import Path
-        slug = Path(book_path).stem
-        course_path = f"{COURSE_DIR}/{slug}-minicourse.md"
-        save_writing_file(
-            course_path,
-            course_text,
-            f"course: {title}"
-        )
-        logger.info(f"Course: saved to {course_path}")
-
-        # 4. Notify user in Telegram
         await context.bot.send_message(
             chat_id=OWNER_CHAT_ID,
-            text=f"Курс готов: {title}\nСохранён в {COURSE_DIR}",
+            text=f"Курс в очереди: {title}\n→ {queue_file}",
             disable_notification=True,
         )
 
     except Exception as e:
-        logger.error(f"Course generation error for {title}: {e}")
+        logger.error(f"Course queue error for {title}: {e}")
         try:
             await context.bot.send_message(
                 chat_id=OWNER_CHAT_ID,
-                text=f"Курс ошибка: {title}\n{str(e)[:200]}",
+                text=f"Курс-очередь ошибка: {title}\n{str(e)[:200]}",
             )
         except Exception:
             pass
@@ -299,7 +292,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "urgent": "🔥 Срочно — добавлю в очередь",
                 "later": "📚 Потом — в конец очереди",
                 "digest": "📖 Digest — генерирую...",
-                "teach": "🎓 Курс — генерирую...",
+                "teach": "🎓 Курс — в очередь",
                 "ref": "📎 Справочное",
                 "skip": "⏭ Пропущено",
             }
@@ -356,7 +349,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     elif action == "teach":
                         import asyncio
                         asyncio.create_task(
-                            _generate_book_course(book_path, book_info, context)
+                            _queue_book_course(book_path, book_info, context)
                         )
                 else:
                     await query.answer("Книга не найдена в state")
