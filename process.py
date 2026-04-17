@@ -51,7 +51,7 @@ FLOATRATES_API = "http://www.floatrates.com/daily/rub.json"
 CACHE_MAX_AGE_HOURS = 24
 
 # Запасные курсы если API недоступен
-FALLBACK_RATES = {"GEL": 28.5, "USD": 76.7, "EUR": 90.4, "GBP": 104.1, "AMD": 0.20, "RUB": 1.0}
+FALLBACK_RATES = {"GEL": 28.5, "USD": 76.7, "EUR": 90.4, "GBP": 104.1, "AMD": 0.20, "CZK": 3.5, "RUB": 1.0}
 
 # Загруженные курсы (заполняется в main)
 LOADED_RATES = None
@@ -69,6 +69,7 @@ def fetch_floatrates():
             "EUR": round(data.get("eur", {}).get("inverseRate", FALLBACK_RATES["EUR"]), 2),
             "GBP": round(data.get("gbp", {}).get("inverseRate", FALLBACK_RATES["GBP"]), 2),
             "AMD": round(data.get("amd", {}).get("inverseRate", FALLBACK_RATES["AMD"]), 4),
+            "CZK": round(data.get("czk", {}).get("inverseRate", FALLBACK_RATES["CZK"]), 2),
             "RUB": 1.0,
         }
         return rates
@@ -456,6 +457,7 @@ def parse_credo_sms(filepath, categories, target_period):
     sms_cat = categories.get("credo_sms", {})
     merchant_map = sms_cat.get("merchants", {})
     type_map = sms_cat.get("type_mapping", {})
+    card_override = sms_cat.get("card_override", {})
 
     with _open_source(filepath, encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -490,7 +492,7 @@ def parse_credo_sms(filepath, categories, target_period):
             # Определяем тип для unified формата
             unified_type = type_map.get(sms_type, "expense")
 
-            # Категоризация по мерчанту
+            # Категоризация: сначала дефолт по типу, потом мерчант может перебить
             category = "other_expense"
             if unified_type == "transfer":
                 category = "transfer"
@@ -502,18 +504,18 @@ def parse_credo_sms(filepath, categories, target_period):
                 category = "cash_out"
             elif unified_type == "income":
                 category = "other_income"
-                # Проверяем мерчант и для доходов (KORONAPAY → transfer, etc)
+
+            # Мерчант-override (перебивает дефолт по типу)
+            if unified_type != "transfer":
                 merchant_upper = merchant.upper()
                 for pattern, cat in merchant_map.items():
                     if pattern.upper() in merchant_upper:
                         category = cat
                         break
-            else:
-                merchant_upper = merchant.upper()
-                for pattern, cat in merchant_map.items():
-                    if pattern.upper() in merchant_upper:
-                        category = cat
-                        break
+
+            # Переопределение по карте (например, детская карта)
+            if card in card_override and unified_type == "expense":
+                category = card_override[card]
 
             # Анонимизация: убираем фамилии для категоризированных персональных операций
             desc = merchant[:80]
