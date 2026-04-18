@@ -338,3 +338,156 @@ def get_meal_type(hour: int) -> str:
         return "dinner"
     else:
         return "snack"
+
+
+# Keyword detection for edit intent — used by handler to route text
+# to parse_edit_command() before the normal "new food" flow.
+EDIT_VERBS = r"^(убери|удали|замени|переименуй|перенеси|смени|поменяй|измени)\b"
+
+
+def is_edit_command(text: str) -> bool:
+    """Return True if text starts with an edit-intent verb."""
+    return bool(re.match(EDIT_VERBS, text.strip().lower()))
+
+
+_EDIT_PARSE_PROMPT = """Ты парсер команд редактирования дневника питания.
+
+Есть список записей за сегодня с индексами:
+{entries_block}
+
+Пользователь написал:
+"{command}"
+
+Определи, что нужно сделать. Верни строго JSON одной из форм:
+
+1. Удалить запись:
+{{"op": "remove", "target_idx": N}}
+
+2. Изменить вес записи (и пересчитать КБЖУ пропорционально):
+{{"op": "rescale", "target_idx": N, "new_weight_g": W}}
+
+3. Переименовать запись:
+{{"op": "rename", "target_idx": N, "new_name": "..."}}
+
+4. Перенести запись в другой приём пищи:
+{{"op": "move", "target_idx": N, "new_meal": "breakfast|lunch|dinner|snack"}}
+
+5. Если не удалось однозначно определить цель:
+{{"op": "ambiguous", "reason": "...короткое объяснение..."}}
+
+6. Если цель не найдена в списке:
+{{"op": "not_found", "reason": "...короткое объяснение..."}}
+
+Правила:
+- target_idx — индекс из списка выше (число)
+- Для rescale: если пользователь пишет "по Xг" и в name есть число N — это N*X
+- "обед"="lunch", "ужин"="dinner", "завтрак"="breakfast", "перекус"="snack"
+- Только один JSON-объект, без markdown, без комментариев.
+"""
+
+
+def parse_edit_command(command: str, today_entries: list) -> dict:
+    """Parse user's natural-language edit command via Gemini.
+
+    Args:
+        command: User text, e.g. "убери творог" or "замени 200г на 300".
+        today_entries: List of today's food log entries (ordered).
+
+    Returns:
+        dict: {op, target_idx, ...} or {op: "error", reason: "..."}.
+    """
+    if not gemini_client:
+        return {"op": "error", "reason": "Gemini недоступен"}
+
+    if not today_entries:
+        return {"op": "not_found", "reason": "Лог за сегодня пуст"}
+
+    # Build compact numbered list
+    lines = []
+    for i, e in enumerate(today_entries):
+        time = e.get("time", "—")
+        meal = _MEAL_RU.get(e.get("meal", ""), e.get("meal", ""))
+        name = e.get("name", "?")
+        weight = e.get("weight_g") or 0
+        wstr = f" {weight}г" if weight else ""
+        kcal = round(e.get("kcal", 0) or 0)
+        lines.append(f"[{i}] {time} {meal}: {name}{wstr} ({kcal} ккал)")
+    entries_block = "\n".join(lines)
+
+    prompt = _EDIT_PARSE_PROMPT.format(
+        entries_block=entries_block, command=command
+    )
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[types.Content(parts=[types.Part(text=prompt)])],
+        )
+        raw = response.text.strip()
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        result = json.loads(raw)
+        if "op" not in result:
+            return {"op": "error", "reason": "Нет поля op в ответе"}
+        return result
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Edit command parse error: {e}")
+        return {"op": "error", "reason": "Не распознал команду"}
+    except Exception as e:
+        logger.error(f"Edit command error: {e}")
+        return {"op": "error", "reason": str(e)}
+
+
+def apply_edit_op(op_result: dict, today_entries: list, log_data: dict) -> tuple[bool, str]:
+    """Apply parsed edit op to log_data in-place.
+
+    Args:
+        op_result: Output of parse_edit_command().
+        today_entries: Ordered list of today's entries (same refs as in log_data["log"]).
+        log_data: Full food log dict (mutated in place).
+
+    Returns:
+        (success, human_message). Caller is responsible for save + regen.
+    """
+    op = op_result.get("op")
+
+    if op == "not_found":
+        return False, f"Не нашёл: {op_result.get('reason', '?')}"
+    if op == "ambiguous":
+        return False, f"Непонятно: {op_result.get('reason', '?')}"
+    if op == "error":
+        return False, f"Ошибка: {op_result.get('reason', '?')}"
+
+    idx = op_result.get("target_idx")
+    if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(today_entries):
+        return False, "Индекс записи вне диапазона"
+
+    target = today_entries[idx]
+
+    if op == "remove":
+        log_data["log"].remove(target)
+        return True, f"Удалено: {target.get('name', '?')}"
+
+    if op == "rescale":
+        new_w = op_result.get("new_weight_g")
+        if not isinstance(new_w, (int, float)) or new_w <= 0:
+            return False, "Не указан корректный новый вес"
+        _rescale_entry(target, int(new_w))
+        return True, f"Пересчитано: {target.get('name', '?')} → {int(new_w)}г ({target.get('kcal')} ккал)"
+
+    if op == "rename":
+        new_name = op_result.get("new_name")
+        if not new_name:
+            return False, "Не указано новое название"
+        old = target.get("name", "?")
+        target["name"] = str(new_name).strip()
+        return True, f"Переименовано: {old} → {target['name']}"
+
+    if op == "move":
+        new_meal = op_result.get("new_meal")
+        if new_meal not in ("breakfast", "lunch", "dinner", "snack"):
+            return False, "Неизвестный приём пищи"
+        target["meal"] = new_meal
+        return True, f"Перенесено: {target.get('name', '?')} → {_MEAL_RU.get(new_meal, new_meal)}"
+
+    return False, f"Неизвестная операция: {op}"

@@ -66,6 +66,7 @@ from food import (
     recognize_food, match_custom_dish, match_kitchen_dish,
     build_food_entry, build_custom_entry,
     format_food_result, format_daily_summary, format_daily_log_for_telegram,
+    is_edit_command, parse_edit_command, apply_edit_op, _log_date,
 )
 
 
@@ -1830,6 +1831,37 @@ async def handle_multi_item_meal(
     await msg.reply_text("\n".join(lines) + "\n\n" + day_log)
 
 
+async def handle_food_edit(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    """Handle edit commands in Food topic: remove / rescale / rename / move.
+
+    Operates on today's log only. For older edits, use manual file editing.
+    """
+    msg = update.message
+    await msg.chat.send_action("typing")
+
+    log_data = load_food_log()
+    today = _log_date(datetime.now(TZ))
+    today_entries = [e for e in log_data.get("log", []) if e.get("date") == today]
+
+    if not today_entries:
+        await msg.reply_text("За сегодня записей нет.")
+        return
+
+    op_result = parse_edit_command(text, today_entries)
+    success, message = apply_edit_op(op_result, today_entries, log_data)
+
+    if not success:
+        await msg.reply_text(message)
+        return
+
+    save_food_log(log_data)
+    update_food_log_md(log_data, today)
+    day_log = format_daily_log_for_telegram(
+        log_data["log"], log_data.get("daily_targets"), today
+    )
+    await msg.reply_text(f"✅ {message}\n\n{day_log}")
+
+
 async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages in the Food topic of From Geek group."""
     from config import FOOD_TOPIC_ID, READING_GROUP_ID
@@ -1951,6 +1983,12 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 await msg.reply_text("Данные потеряны.")
             return
+
+    # ── Edit-command detection ──
+    # "убери X", "замени X на 300г", "переименуй X в Y", "перенеси X в обед"
+    if is_edit_command(text):
+        await handle_food_edit(update, context, text)
+        return
 
     # ── Multi-item meal detection ──
     # "Обед: item1, item2, item3" or plain "item1, item2, item3"
