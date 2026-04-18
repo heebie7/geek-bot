@@ -49,23 +49,44 @@ def _get_token() -> str | None:
         return None
 
 
-def _api(method: str, params: dict) -> dict | None:
-    """Make authenticated FatSecret API call."""
+def _api(method: str, params: dict, _retries: int = 2) -> dict | None:
+    """
+    Make authenticated FatSecret API call.
+
+    Retries on code 21 (Invalid IP) — FatSecret balancers intermittently
+    return this even for whitelisted IPs. Small backoff between retries.
+    """
     token = _get_token()
     if not token:
         return None
-    try:
-        r = requests.get(
-            _API_URL,
-            params={"method": method, "format": "json", **params},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        logger.warning(f"FatSecret API error ({method}): {e}")
-        return None
+    for attempt in range(_retries + 1):
+        try:
+            r = requests.get(
+                _API_URL,
+                params={"method": method, "format": "json", **params},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            logger.warning(f"FatSecret API error ({method}): {e}")
+            return None
+
+        err = data.get("error") if isinstance(data, dict) else None
+        if err and err.get("code") == 21:
+            if attempt < _retries:
+                time.sleep(0.4 * (attempt + 1))
+                continue
+            logger.warning(
+                f"FatSecret code 21 after {_retries + 1} attempts ({method}): {err.get('message')}"
+            )
+            return None
+        if err:
+            logger.warning(f"FatSecret error ({method}): {err}")
+            return None
+        return data
+    return None
 
 
 def _per100g(serving: dict) -> dict | None:
