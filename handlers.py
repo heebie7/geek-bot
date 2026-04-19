@@ -1984,6 +1984,17 @@ async def handle_food_topic_text(update: Update, context: ContextTypes.DEFAULT_T
                 await msg.reply_text("Данные потеряны.")
             return
 
+    # ── "Что поесть?" suggestion ──
+    import re as _re_wat
+    if _re_wat.match(r'^(что\s+(поесть|съесть|перекусить)|посоветуй\s+\w+)[?!\s.]*$', text.strip(), _re_wat.IGNORECASE):
+        from meal_data import suggest_what_to_eat
+        from food import _log_date
+        log_data = load_food_log()
+        today = _log_date(datetime.now(TZ))
+        suggestion = suggest_what_to_eat(log_data, today)
+        await msg.reply_text(suggestion)
+        return
+
     # ── Edit-command detection ──
     # "убери X", "замени X на 300г", "переименуй X в Y", "перенеси X в обед"
     if is_edit_command(text):

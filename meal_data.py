@@ -269,3 +269,43 @@ def generate_weekly_menu() -> str:
 
     text = "\n".join(lines)
     return f"<pre>{text}</pre>"
+
+
+def suggest_what_to_eat(log_data: dict, today: str) -> str:
+    """Suggest what to eat based on remaining daily targets."""
+    import random
+    from config import DEFAULT_FOOD_TARGETS
+
+    targets = log_data.get("daily_targets") or dict(DEFAULT_FOOD_TARGETS)
+    today_entries = [e for e in log_data.get("log", []) if e.get("date") == today]
+
+    totals_kcal = sum(e.get("kcal", 0) or 0 for e in today_entries)
+    totals_protein = sum(e.get("protein", 0) or 0 for e in today_entries)
+
+    remaining_kcal = targets.get("kcal", 1800) - totals_kcal
+    remaining_protein = targets.get("protein", 130) - totals_protein
+
+    # Sort by protein if protein is short, otherwise shuffle
+    pool = list(PERSONAL_A_MEALS)
+    if remaining_protein > 30:
+        pool.sort(key=lambda m: m.protein, reverse=True)
+    else:
+        random.shuffle(pool)
+
+    # Filter to meals that fit remaining kcal (with 10% buffer)
+    if remaining_kcal > 0:
+        reasonable = [m for m in pool if m.kcal <= remaining_kcal * 1.1]
+        if reasonable:
+            pool = reasonable
+
+    picks = pool[:3]
+
+    lines = ["Что поесть:"]
+    for m in picks:
+        lines.append(f"• {m.name} — {m.kcal} ккал, {m.protein}г белка")
+
+    lines.append(
+        f"\nОсталось до нормы: {max(0, round(remaining_kcal))} ккал, "
+        f"{max(0, round(remaining_protein))}г белка"
+    )
+    return "\n".join(lines)
