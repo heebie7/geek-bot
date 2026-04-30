@@ -822,6 +822,28 @@ def log_whoop_data():
         daily_path = f"life/health/whoop/{today}.md"
         save_writing_file(daily_path, daily_note, f"WHOOP {today}")
 
+        # Refresh yesterday's note with finalized day strain.
+        # WHOOP day strain finalizes only after the next sleep onset, so
+        # the snapshot written yesterday morning has stale strain (~0).
+        # By the time we run today, yesterday's cycle is closed and strain is final.
+        try:
+            yesterday = (datetime.now(TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+            rec_y = whoop_client.get_recovery_yesterday()
+            sleep_y = whoop_client.get_sleep_yesterday()
+            cycle_y = whoop_client.get_cycle_yesterday()
+            workouts_y = whoop_client.get_workouts_yesterday()
+            if any([rec_y, sleep_y, cycle_y, workouts_y]):
+                yday_note = whoop_client.format_daily_note(
+                    rec=rec_y, sleep=sleep_y, body=body,
+                    cycle=cycle_y, workouts=workouts_y,
+                    target_date=yesterday,
+                )
+                yday_path = f"life/health/whoop/{yesterday}.md"
+                save_writing_file(yday_path, yday_note, f"WHOOP {yesterday} (final strain)")
+                logger.info(f"WHOOP yesterday refresh ({yesterday}): strain finalized")
+        except Exception as e:
+            logger.warning(f"WHOOP yesterday refresh failed: {e}")
+
         # Legacy: also append to life/whoop.md (will be removed later)
         existing = get_writing_file("life/whoop.md")
         if existing and f"## {today}" not in existing:

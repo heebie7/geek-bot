@@ -237,6 +237,49 @@ class WhoopClient:
             return data["records"][0]
         return None
 
+    def get_recovery_yesterday(self) -> dict | None:
+        """Get yesterday's recovery (the score that was 'today' yesterday morning)."""
+        now = datetime.now(TZ)
+        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0).isoformat()
+        end = now.replace(hour=0, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/recovery", params={
+            "start": start,
+            "end": end,
+            "limit": 1,
+        })
+        if data and data.get("records"):
+            return data["records"][0]
+        return None
+
+    def get_sleep_yesterday(self) -> dict | None:
+        """Get the primary sleep that ended yesterday morning (i.e. night before yesterday → yesterday)."""
+        now = datetime.now(TZ)
+        start = (now - timedelta(days=2)).replace(hour=0, minute=0, second=0).isoformat()
+        end = (now - timedelta(days=1)).replace(hour=12, minute=0, second=0).isoformat()
+        data = self._api_get("/v2/activity/sleep", params={
+            "start": start,
+            "limit": 5,
+        })
+        if not data or not data.get("records"):
+            return None
+        try:
+            start_dt = datetime.fromisoformat(start)
+            end_dt = datetime.fromisoformat(end)
+        except ValueError:
+            start_dt = end_dt = None
+        for r in data["records"]:
+            if r.get("nap", False):
+                continue
+            if start_dt is None:
+                return r
+            try:
+                rec_start = datetime.fromisoformat(r["start"].replace("Z", "+00:00")).astimezone(TZ)
+                if start_dt <= rec_start <= end_dt:
+                    return r
+            except Exception:
+                continue
+        return None
+
     def get_recovery_3_days(self) -> list:
         """Get last 3 days of recovery for trend analysis."""
         now = datetime.now(TZ)
@@ -446,13 +489,14 @@ class WhoopClient:
 
         return "\n".join(parts)
 
-    def format_daily_note(self, rec=None, sleep=None, body=None, cycle=None, workouts=None) -> str:
+    def format_daily_note(self, rec=None, sleep=None, body=None, cycle=None, workouts=None, target_date=None) -> str:
         """Generate daily note with YAML frontmatter for Obsidian.
 
         All parameters are raw API responses (or None if unavailable).
+        target_date: YYYY-MM-DD string for the note's date field; defaults to today.
         Returns full markdown content ready to save as YYYY-MM-DD.md.
         """
-        today = datetime.now(TZ).strftime("%Y-%m-%d")
+        today = target_date or datetime.now(TZ).strftime("%Y-%m-%d")
 
         # === Extract fields ===
         # Recovery
@@ -570,9 +614,6 @@ class WhoopClient:
                 if ws.get("kilojoule"):
                     parts.append(f"{round(ws['kilojoule'], 1)} kJ")
                 workout_lines.append("- " + " | ".join(p for p in parts if p))
-        # Fallback: detect boxing by strain threshold if no workout data
-        if not workouts and strain is not None and strain >= 5:
-            boxing = True
 
         # === Build YAML frontmatter ===
         def v(val):
