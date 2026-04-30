@@ -1389,8 +1389,13 @@ def main() -> None:
     # Обработка голосовых сообщений (транскрипция → обработка как текст)
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    # Обработка фото (для режима заметки)
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo_note))
+    # Обработка фото (для режима заметки) — только вне группы From Geek,
+    # чтобы handle_food_topic_photo / handle_translate_photo / handle_movement_photo
+    # в той же group=0 могли отработать на свои топики.
+    application.add_handler(MessageHandler(
+        filters.PHOTO & ~filters.Chat(READING_GROUP_ID),
+        handle_photo_note,
+    ))
 
     # Обработка CSV файлов
     application.add_handler(MessageHandler(filters.Document.ALL, handle_csv_upload))

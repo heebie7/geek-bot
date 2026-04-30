@@ -2097,39 +2097,47 @@ async def handle_food_topic_photo(update: Update, context: ContextTypes.DEFAULT_
     if msg.chat_id != READING_GROUP_ID or msg.message_thread_id != FOOD_TOPIC_ID:
         return
 
-    # Download photo
-    photo = msg.photo[-1]
-    file = await photo.get_file()
-    photo_bytes = await file.download_as_bytearray()
-    caption = msg.caption or None
+    try:
+        photo = msg.photo[-1]
+        file = await photo.get_file()
+        photo_bytes = await file.download_as_bytearray()
+        caption = msg.caption or None
 
-    await msg.chat.send_action("typing")
-    recognition = recognize_food(bytes(photo_bytes), caption)
-    confidence = recognition.get("confidence", 0.0)
+        await msg.chat.send_action("typing")
+        recognition = recognize_food(bytes(photo_bytes), caption)
+        confidence = recognition.get("confidence", 0.0)
+        logger.info(
+            f"food_topic_photo: confidence={confidence}, name={recognition.get('name')}"
+        )
 
-    if confidence < 0.3:
-        return  # not food, ignore
+        if confidence < 0.3:
+            await msg.reply_text(
+                "Не вижу еды на фото. Если это еда — подпиши коротко (например, «куриный суп»), я переспрошу."
+            )
+            return
 
-    # Try custom dishes if caption provided
-    log_data = load_food_log()
-    custom = log_data.get("custom_dishes", {})
-    custom_match = match_custom_dish(recognition.get("name", ""), custom) if custom else None
+        log_data = load_food_log()
+        custom = log_data.get("custom_dishes", {})
+        custom_match = match_custom_dish(recognition.get("name", ""), custom) if custom else None
 
-    if custom_match:
-        entry = build_custom_entry(custom_match)
-    else:
-        dishes = load_kitchen_dishes()
-        kitchen_match = match_kitchen_dish(recognition.get("name", ""), dishes)
-        entry = build_food_entry(recognition, kitchen_match, caption)
+        if custom_match:
+            entry = build_custom_entry(custom_match)
+        else:
+            dishes = load_kitchen_dishes()
+            kitchen_match = match_kitchen_dish(recognition.get("name", ""), dishes)
+            entry = build_food_entry(recognition, kitchen_match, caption)
 
-    context.user_data.pop("pending_food", None)
-    context.user_data["pending_food"] = entry
-    text = format_food_result(entry)
+        context.user_data.pop("pending_food", None)
+        context.user_data["pending_food"] = entry
+        text = format_food_result(entry)
 
-    if confidence < 0.6:
-        await msg.reply_text(f"Это еда?\n\n{text}", reply_markup=food_is_food_keyboard())
-    else:
-        await msg.reply_text(text, reply_markup=food_confirm_keyboard())
+        if confidence < 0.6:
+            await msg.reply_text(f"Это еда?\n\n{text}", reply_markup=food_is_food_keyboard())
+        else:
+            await msg.reply_text(text, reply_markup=food_confirm_keyboard())
+    except Exception as e:
+        logger.exception(f"food_topic_photo failed: {e}")
+        await msg.reply_text(f"Распознавание упало: {type(e).__name__}: {e}")
 
 
 async def handle_food_confirm(query, context: ContextTypes.DEFAULT_TYPE) -> None:
