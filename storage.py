@@ -801,7 +801,7 @@ def update_food_log_md(log_data: dict, date: str) -> bool:
 
 
 def load_kitchen_dishes() -> list:
-    """Load dishes from family-kitchen repo. Cached daily. KBJU cast to int."""
+    """Load dishes from family-kitchen repo. Cached daily. KBJU cast to float."""
     global _kitchen_cache, _kitchen_cache_date
     today = datetime.now(TZ).date()
     if _kitchen_cache is not None and _kitchen_cache_date == today:
@@ -817,14 +817,14 @@ def load_kitchen_dishes() -> list:
         raw = base64.b64decode(content.content).decode("utf-8")
         data = json.loads(raw)
         dishes = data.get("dishes", [])
-        # Cast KBJU string fields to int
+        # Cast KBJU string fields to float (kitchen md stores decimals like "4.2")
         for dish in dishes:
-            for field in ("kcal", "protein", "fat", "carbs"):
+            for field in ("kcal", "protein", "fat", "carbs", "fiber", "calcium"):
                 if field in dish and isinstance(dish[field], str):
                     try:
-                        dish[field] = int(dish[field])
+                        dish[field] = float(dish[field])
                     except ValueError:
-                        dish[field] = 0
+                        dish[field] = 0.0
         _kitchen_cache = dishes
         _kitchen_cache_date = today
         logger.info(f"Loaded {len(dishes)} dishes from kitchen repo")
