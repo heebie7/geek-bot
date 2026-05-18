@@ -1343,10 +1343,12 @@ def main() -> None:
     # Weekly summary moved to Claude Code scheduled task `health-weekly` (Sun 12:15)
     # Monday review moved to Claude Code scheduled task `captain-weekly` (Mon 12:00)
     # Saturday finance CSV reminder at 10:00
+    # PTB v20+ days convention: 0=Sunday, 6=Saturday (NOT Python datetime Mon=0).
+    # Bug history: was days=(5,) which fires Friday — fixed 2026-05-18.
     job_queue.run_daily(
         send_finance_csv_reminder,
         time=time(hour=10, minute=0, tzinfo=TZ),
-        days=(5,),  # Saturday
+        days=(6,),  # Saturday in PTB v20+ convention (Sun=0..Sat=6)
         chat_id=OWNER_CHAT_ID,
         name=f"finance_reminder_{OWNER_CHAT_ID}",
     )
