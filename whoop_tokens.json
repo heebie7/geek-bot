@@ -1,7 +1,7 @@
 {
-  "access_token": "iw5-NrH2qK7nRu9Oa77MHOCf9fwEDhY0d7XNuC40VCc.ONwbZJcsBuCQ7uxXk2UM5CLxp11NgwNshS0j8AjVVno",
-  "expires_in": 3600,
-  "refresh_token": "w4HM3YSyWk5b18fT7t61KO9n65h-ILacZzFy08jTNe8.SDRkDBtMrMEUPmgFyLQWe2Er7o1ry6_KoM7YwybPK2g",
+  "access_token": "BPYbT8jy0GSbYuC_U6bXZQfFR5abdyCm0MaiJQzI9xQ.Gd_LL1c-vPmgXrriY_G7eZOzxM7aYKEazaXibKcHays",
+  "expires_in": 3599,
+  "refresh_token": "TUczFBj6csOJ8ANChsRC-BW3eivFDIS61WUvPHsYO_M.yC184e9qQG00TyhcYlP1V5GXyoX_eIAtT7F3srQnbFs",
   "scope": "offline read:recovery read:sleep read:workout read:cycles read:body_measurement read:profile",
   "token_type": "bearer"
 }
