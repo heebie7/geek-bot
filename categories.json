@@ -15,7 +15,7 @@
       "От мамы": "gifts_income",
       "paypal": "work_income",
       "Продукты": "other_income",
-      "Чужие деньги": "other_income",
+      "Чужие деньги": "transfer",
       "Дети": "other_income",
       "Здоровье": "other_income",
       "Образование": "other_income",
@@ -24,7 +24,6 @@
       "Одежда, обувь, аксессуары": "refund",
       "Проценты": "interest_income",
       "Ольга А": "other_income",
-      "Чужие деньги": "transfer",
       "Ксения Зернина": "transfer",
       "Роман Х.": "work_income"
     },
@@ -75,7 +74,9 @@
       "Currency exchange": "transfer"
     },
     "payee_income_override": {
-      "Роман Х.": "work_income"
+      "Роман Х.": "work_income",
+      "Владимир Станиславович Б.": "work_income",
+      "Карина Рашидовна Н.": "work_income"
     }
   },
   "wolt": {
@@ -139,7 +140,9 @@
       "Proton": "work_expenses",
       "Yana Kalmykova": "kids",
       "Ekaterina Varvarkina": "kids",
-      "Varvarkina": "kids"
+      "Varvarkina": "kids",
+      "Cloudflare Inc": "subscriptions",
+      "FISHINATREE": "subscriptions"
     }
   },
   "credo_sms": {
@@ -171,7 +174,7 @@
       "SMART": "groceries",
       "FRESCO": "groceries",
       "ORI NABIJI": "groceries",
-      "LTD TSISKVILI": "groceries",
+      "LTD TSISKVILI": "eating_out",
       "SATSKHOBI": "groceries",
       "SAVSE KALATA": "groceries",
       "SUB DEVELOPMENT": "groceries",
@@ -493,7 +496,23 @@
       "P/E LELA MALASIDZE": "self_care",
       "LLC TIFLISFOOD 1": "eating_out",
       "Ekaterina Varvarkina": "kids",
-      "EKATERINA VARVARKINA": "kids"
+      "EKATERINA VARVARKINA": "kids",
+      "FLT*Go.yandex": "transport",
+      "Go.yandex": "transport",
+      "KOPALA": "travel",
+      "TSISKVILI": "eating_out",
+      "Dento-Art": "health",
+      "ZEN Dental": "health",
+      "DEDIS XELI": "groceries",
+      "FISHINATREE": "subscriptions",
+      "Cloudflare Inc": "subscriptions",
+      "Владимир Станиславович": "work_income",
+      "Карина Рашидовна": "work_income",
+      "GOOGLE *Claude": "ai_tokens",
+      "Google CLOUD": "subscriptions",
+      "ONLINEVENTS": "work_expenses",
+      "BAZARI ORBELIANZE": "groceries",
+      "IVERTUBANI": "groceries"
     },
     "type_mapping": {
       "payment": "expense",
