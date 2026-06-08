@@ -8,7 +8,7 @@
     python process.py 2026-01 --dry-run     # только показать, не записывать
 
 Ищет raw файлы в finance/raw/{year}/ по паттернам:
-    zen*.csv, pp*.csv (или paypal*.csv), credo_sms*.csv
+    zen*.csv, pp*.csv / paypal*.csv / Download*.csv, credo_sms*.csv, wolt*.csv
 """
 
 import argparse
