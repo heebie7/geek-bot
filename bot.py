@@ -238,12 +238,15 @@ async def _queue_book_course(book_path: str, book_info: dict, context):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка нажатий на кнопки — тонкий диспетчер по префиксам."""
     query = update.callback_query
-    await query.answer()
-
     data = query.data
 
     if data == "noop":
+        await query.answer()
         return
+
+    # bt: handler calls query.answer() itself (with label text)
+    if not data.startswith("bt:"):
+        await query.answer()
 
     # ── Quote source selection ──
     elif data.startswith("quote_src:"):
@@ -334,11 +337,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     )
                     label = action_labels.get(action, action)
                     title = book_info.get("title", "?")
+                    await query.answer(label)
                     try:
                         await query.edit_message_text(f"{title}\n\n✓ {label}")
                     except Exception:
-                        pass
-                    await query.answer(label)
+                        # Message too old to edit — send confirmation reply
+                        try:
+                            await context.bot.send_message(
+                                chat_id=query.message.chat_id,
+                                text=f"✓ {title}: {label}",
+                                message_thread_id=query.message.message_thread_id,
+                            )
+                        except Exception:
+                            pass
 
                     # If digest/teach — launch background generation
                     if action == "digest":
@@ -352,10 +363,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             _queue_book_course(book_path, book_info, context)
                         )
                 else:
-                    await query.answer("Книга не найдена в state")
+                    await query.answer("Книга не найдена в state", show_alert=True)
             except Exception as e:
                 logger.error(f"Book triage callback error: {e}")
-                await query.answer("Ошибка обработки")
+                await query.answer(f"Ошибка: {e}", show_alert=True)
         return
 
     # ── Translate: formulation style choice ──
