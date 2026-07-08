@@ -63,13 +63,21 @@ def fetch_floatrates():
         with urllib.request.urlopen(FLOATRATES_API, timeout=10) as response:
             data = json.loads(response.read().decode())
 
+        def _rate(code, default, ndigits=2):
+            # inverseRate иногда приходит строкой — приводим к float, иначе fallback
+            v = data.get(code, {}).get("inverseRate", default)
+            try:
+                return round(float(v), ndigits)
+            except (TypeError, ValueError):
+                return default
+
         rates = {
-            "GEL": round(data.get("gel", {}).get("inverseRate", FALLBACK_RATES["GEL"]), 2),
-            "USD": round(data.get("usd", {}).get("inverseRate", FALLBACK_RATES["USD"]), 2),
-            "EUR": round(data.get("eur", {}).get("inverseRate", FALLBACK_RATES["EUR"]), 2),
-            "GBP": round(data.get("gbp", {}).get("inverseRate", FALLBACK_RATES["GBP"]), 2),
-            "AMD": round(data.get("amd", {}).get("inverseRate", FALLBACK_RATES["AMD"]), 4),
-            "CZK": round(data.get("czk", {}).get("inverseRate", FALLBACK_RATES["CZK"]), 2),
+            "GEL": _rate("gel", FALLBACK_RATES["GEL"]),
+            "USD": _rate("usd", FALLBACK_RATES["USD"]),
+            "EUR": _rate("eur", FALLBACK_RATES["EUR"]),
+            "GBP": _rate("gbp", FALLBACK_RATES["GBP"]),
+            "AMD": _rate("amd", FALLBACK_RATES["AMD"], 4),
+            "CZK": _rate("czk", FALLBACK_RATES["CZK"]),
             "RUB": 1.0,
         }
         return rates
@@ -327,7 +335,7 @@ def parse_paypal(filepath, categories, target_period):
     Фильтрует:
     - Currency Conversion строки (дубли)
     - Account Hold строки
-    - Считает Gross (не Net) как сумму операции
+    - Считает Net (сумму после комиссии PayPal) как сумму операции
     """
     rows = []
     sub_map = categories["paypal"]["subscriptions"]
@@ -369,7 +377,9 @@ def parse_paypal(filepath, categories, target_period):
                 continue
 
             currency = row.get("Currency", "").strip().strip('"')
-            gross_str = row.get("Gross", "0").strip().strip('"')
+            # Net = сумма после комиссии PayPal (реальное изменение баланса), не Gross.
+            # gross_str/gross ниже фактически хранят Net.
+            gross_str = row.get("Net", "0").strip().strip('"')
             # Поддержка EU формата: "-8,00" → "-8.00"
             if "." not in gross_str and "," in gross_str:
                 gross_str = gross_str.replace(",", ".")
@@ -517,6 +527,13 @@ def parse_credo_sms(filepath, categories, target_period):
             if card in card_override and unified_type == "expense":
                 category = card_override[card]
 
+            # Только ВХОДЯЩИЕ переводы: деньги, пришедшие на свой же счёт (напр.
+            # Золотая Корона на Credo), уже учтены как доход (Работа при получении
+            # в Озон). Считать их снова доходом = двойной счёт. Исходящие transfer
+            # НЕ трогаем — могут быть реальными расходами (алименты/семья в РФ).
+            if unified_type == "income" and category == "transfer":
+                unified_type = "transfer"
+
             # Анонимизация: убираем фамилии для категоризированных персональных операций
             desc = merchant[:80]
             if category not in ("other_expense", "other_income"):
@@ -624,6 +641,9 @@ def find_raw_files(year):
     for f in year_dir.iterdir():
         name = f.name.lower()
         if name.startswith("zen") and name.endswith(".csv"):
+            # Пропускаем zen_full_dump (не месячный дамп) и битые симлинки
+            if "full_dump" in name or not f.exists():
+                continue
             zen_candidates.append(f)
         elif (name.startswith("pp") or name.startswith("paypal") or name.startswith("download")) and name.endswith(".csv"):
             files.setdefault("paypal_files", []).append(f)
