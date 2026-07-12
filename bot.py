@@ -248,8 +248,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not data.startswith("bt:"):
         await query.answer()
 
+    # ── Dispatch chain (standalone; must NOT be chained to the answer-guard above) ──
     # ── Quote source selection ──
-    elif data.startswith("quote_src:"):
+    if data.startswith("quote_src:"):
         from tasks import get_today_reading_sources, save_quote
         slug = data[10:]
         quote_text = context.user_data.pop("pending_quote", None)
