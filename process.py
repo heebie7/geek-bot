@@ -786,6 +786,14 @@ def generate_yearly_summary(rows, year, categories):
         month_key = r["date"][:7]
         months_data[month_key].append(r)
 
+    # Средние — только по полным месяцам: текущий (частичный) месяц исключаем
+    current_key = datetime.now().strftime("%Y-%m")
+    complete_keys = [k for k in months_data if k != current_key]
+    if not complete_keys:
+        complete_keys = list(months_data)
+    n_months = len(complete_keys) or 1
+    complete_rows = [r for k in complete_keys for r in months_data[k]]
+
     lines = []
     lines.append(f"# Финансовая сводка {year}")
     lines.append("")
@@ -817,7 +825,9 @@ def generate_yearly_summary(rows, year, categories):
     bal_year = total_inc_year - total_exp_year
     sign_y = "+" if bal_year >= 0 else ""
     lines.append(f"| **Итого** | **{total_inc_year:,.0f}** | **{total_exp_year:,.0f}** | **{sign_y}{bal_year:,.0f}** |")
-    lines.append(f"| *Среднее/мес* | *{total_inc_year/12:,.0f}* | *{total_exp_year/12:,.0f}* | |")
+    avg_inc = sum(r["amount_rub"] for r in complete_rows if r["type"] == "income") / n_months
+    avg_exp = sum(r["amount_rub"] for r in complete_rows if r["type"] == "expense") / n_months
+    lines.append(f"| *Среднее/мес ({n_months} полн. мес)* | *{avg_inc:,.0f}* | *{avg_exp:,.0f}* | |")
     lines.append("")
 
     # Расходы по категориям за год
@@ -828,6 +838,12 @@ def generate_yearly_summary(rows, year, categories):
 
     total_exp = sum(expense_by_cat.values())
 
+    # Суммы по полным месяцам — для колонки «Среднее/мес»
+    expense_by_cat_avg = defaultdict(float)
+    for r in complete_rows:
+        if r["type"] == "expense":
+            expense_by_cat_avg[r["category"]] += r["amount_rub"]
+
     lines.append("## Расходы по категориям (год)")
     lines.append("")
     lines.append("| Категория | Сумма R | Среднее/мес | % |")
@@ -835,7 +851,7 @@ def generate_yearly_summary(rows, year, categories):
     for cat, amount in sorted(expense_by_cat.items(), key=lambda x: -x[1]):
         name = display.get(cat, cat)
         pct = (amount / total_exp * 100) if total_exp > 0 else 0
-        lines.append(f"| {name} | {amount:,.0f} | {amount/12:,.0f} | {pct:.1f}% |")
+        lines.append(f"| {name} | {amount:,.0f} | {expense_by_cat_avg[cat]/n_months:,.0f} | {pct:.1f}% |")
     lines.append("")
 
     # Доходы по категориям
@@ -844,13 +860,18 @@ def generate_yearly_summary(rows, year, categories):
     for r in income_rows:
         income_by_cat[r["category"]] += r["amount_rub"]
 
+    income_by_cat_avg = defaultdict(float)
+    for r in complete_rows:
+        if r["type"] == "income":
+            income_by_cat_avg[r["category"]] += r["amount_rub"]
+
     lines.append("## Доходы по категориям (год)")
     lines.append("")
     lines.append("| Категория | Сумма R | Среднее/мес |")
     lines.append("|-----------|---------|-------------|")
     for cat, amount in sorted(income_by_cat.items(), key=lambda x: -x[1]):
         name = display.get(cat, cat)
-        lines.append(f"| {name} | {amount:,.0f} | {amount/12:,.0f} |")
+        lines.append(f"| {name} | {amount:,.0f} | {income_by_cat_avg[cat]/n_months:,.0f} |")
     lines.append("")
 
     return "\n".join(lines)
@@ -1018,10 +1039,12 @@ def main():
     all_rows = []
     has_credo_sms = False
     has_wolt = False
+    wolt_dates = set()  # даты, покрытые Wolt CSV — для дедупликации Credo SMS
 
     if "wolt" in raw_files:
         wolt_rows = parse_wolt(raw_files["wolt"], categories, period)
         has_wolt = len(wolt_rows) > 0
+        wolt_dates = {r["date"] for r in wolt_rows}
         print(f"Wolt: {len(wolt_rows)} транзакций")
         all_rows.extend(wolt_rows)
 
@@ -1122,7 +1145,17 @@ def main():
     summary_path = SUMMARIES_DIR / f"{period}.md"
     write_summary(summary, summary_path)
 
+    # Regenerate dashboard so finance/dashboard.html reflects latest CSVs
+    try:
+        dashboard_script = Path(__file__).parent / "generate_html_dashboard.py"
+        if dashboard_script.exists():
+            import subprocess
+            subprocess.run([sys.executable, str(dashboard_script)], check=False, capture_output=True)
+    except Exception as e:
+        print(f"  (dashboard regen skipped: {e})")
+
     print("\nГотово.")
+    print("Dashboard: file:///Users/Anya/Documents/Writing%20workspace/finance/dashboard.html")
 
 
 if __name__ == "__main__":
