@@ -1203,8 +1203,9 @@ Human ответила "как себя чувствуешь?": "{feeling_text}"
     elif data == "food_log":
         from storage import load_food_log
         from food import format_daily_log_for_telegram, _log_date
-        from config import TZ
-        from datetime import datetime
+        # NB: do NOT re-import datetime/TZ here — both are module-level (lines 13, 29).
+        # A local import shadows them across the whole function, unbinding `datetime`
+        # at the bt: branch (line ~333) → UnboundLocalError killing all triage buttons.
         log_data = load_food_log()
         today = _log_date(datetime.now(TZ))
         day_log = format_daily_log_for_telegram(log_data["log"], log_data.get("daily_targets"), today)
