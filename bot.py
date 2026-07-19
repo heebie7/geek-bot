@@ -116,6 +116,107 @@ def _trim_to_telegram_limit(text: str, limit: int = 4096) -> str:
 
 # ── Book digest background task ────────────────────────────────────
 
+def _looks_english(text: str) -> bool:
+    """Cheap heuristic: Latin letters clearly outnumber Cyrillic in a sample."""
+    sample = text[:4000]
+    lat = sum(1 for c in sample.lower() if "a" <= c <= "z")
+    cyr = sum(1 for c in sample.lower() if "а" <= c <= "я")
+    return lat > cyr * 2
+
+
+def _split_for_translation(text: str, max_words: int = 2200) -> list:
+    """Split on paragraph boundaries into <=max_words chunks (Gemini 8192 output cap)."""
+    paras = text.split("\n\n")
+    chunks, cur, cur_words = [], [], 0
+    for p in paras:
+        w = len(p.split())
+        if cur and cur_words + w > max_words:
+            chunks.append("\n\n".join(cur))
+            cur, cur_words = [], 0
+        cur.append(p)
+        cur_words += w
+    if cur:
+        chunks.append("\n\n".join(cur))
+    return chunks or [text]
+
+
+def _translate_long(text: str):
+    """Translate long text in Gemini-sized chunks. Returns text (originals kept for any
+    failed chunk), or None if EVERY chunk failed (e.g. Gemini budget exhausted)."""
+    from translate import translate_text
+    out, any_ok = [], False
+    for part in _split_for_translation(text):
+        t = translate_text(part)
+        if t:
+            out.append(t)
+            any_ok = True
+        else:
+            out.append(part)
+    return "\n\n".join(out) if any_ok else None
+
+
+async def _send_reading_doc(context, caption: str, body: str, slug: str):
+    """Post `body` as a .md document into the Читалка topic."""
+    from io import BytesIO
+    bio = BytesIO(body.encode("utf-8"))
+    bio.name = f"{slug}.md"
+    await context.bot.send_document(
+        chat_id=READING_GROUP_ID,
+        message_thread_id=READING_TOPIC_ID,
+        document=bio,
+        filename=f"{slug}.md",
+        caption=caption[:1024],
+        disable_notification=True,
+    )
+
+
+async def _send_urgent_to_reading(book_path: str, book_info: dict, context):
+    """Urgent: push the item into Читалка now. Articles are translated (if English) and
+    posted immediately as a .md doc; books are too large to inline, so they stay in the
+    morning-reading queue and get a heads-up instead."""
+    import asyncio
+    from pathlib import Path
+    from storage import get_writing_file
+
+    title = book_info.get("title", "?")
+    if book_info.get("type", "book") != "article":
+        await context.bot.send_message(
+            chat_id=OWNER_CHAT_ID,
+            text=f"🔥 Срочно (книга): {title}\nВ начало очереди — придёт в утреннем разборе Читалки (полный PDF).",
+            disable_notification=True,
+        )
+        return
+
+    try:
+        content = get_writing_file(book_path)
+        if not content:
+            await context.bot.send_message(
+                chat_id=OWNER_CHAT_ID, text=f"🔥 Срочно: не смог прочитать {title}",
+                disable_notification=True)
+            return
+
+        body, note = content, ""
+        if _looks_english(content):
+            translated = await asyncio.to_thread(_translate_long, content)
+            if translated:
+                body = translated
+            else:
+                note = " (оригинал — перевод недоступен, Gemini)"
+
+        slug = Path(book_path).stem
+        await _send_reading_doc(context, f"🔥 Срочно — {title}{note}", body, slug)
+        await context.bot.send_message(
+            chat_id=OWNER_CHAT_ID, text=f"🔥 Срочно → Читалка: {title}",
+            disable_notification=True)
+    except Exception as e:
+        logger.error(f"Urgent-to-reading error for {title}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=OWNER_CHAT_ID, text=f"🔥 Срочно ошибка: {title}\n{str(e)[:200]}")
+        except Exception:
+            pass
+
+
 async def _generate_book_digest(book_path: str, book_info: dict, context):
     """Background task: read book from GitHub, generate digest via Gemini, save to reading-mobile."""
     from storage import get_writing_file, save_writing_file
@@ -160,10 +261,11 @@ async def _generate_book_digest(book_path: str, book_info: dict, context):
         )
         logger.info(f"Digest: saved to {digest_path}")
 
-        # 4. Notify user in Telegram
+        # 4. Post the digest into the Читалка topic (+ reading-mobile copy above)
+        await _send_reading_doc(context, f"📖 Digest — {title}", digest_text, Path(book_path).stem + "-digest")
         await context.bot.send_message(
             chat_id=OWNER_CHAT_ID,
-            text=f"Digest готов: {title}\nСохранён в reading-mobile",
+            text=f"📖 Digest готов → Читалка: {title}",
             disable_notification=True,
         )
 
@@ -362,6 +464,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         import asyncio
                         asyncio.create_task(
                             _queue_book_course(book_path, book_info, context)
+                        )
+                    elif action == "urgent":
+                        import asyncio
+                        asyncio.create_task(
+                            _send_urgent_to_reading(book_path, book_info, context)
                         )
                 else:
                     await query.answer("Книга не найдена в state", show_alert=True)
